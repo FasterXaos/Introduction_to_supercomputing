@@ -2,13 +2,11 @@
 #include <vector>
 #include <random>
 #include <chrono>
-#include <limits>
 #include <string>
-#include <algorithm>
 #include <omp.h>
 
 int main(int argc, char** argv) {
-    // Usage: OpenMP_1 <problemSize> <mode> [seed]
+    // Usage: OpenMP_2 <problemSize> <mode> [seed]
     // mode: reduction | no_reduction
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <problemSize> <mode> [seed]\n";
@@ -19,52 +17,53 @@ int main(int argc, char** argv) {
     std::string mode = argv[2];
     unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 12345u;
 
-    std::vector<int> dataVector;
-    dataVector.resize(problemSize);
+    std::vector<double> vectorA(problemSize);
+    std::vector<double> vectorB(problemSize);
+
     std::mt19937 generator(seed);
-    std::uniform_int_distribution<int> distribution(0, 1000000000);
+    std::uniform_real_distribution<double> distribution(0.0, 1.0);
 
     for (int i = 0; i < problemSize; ++i) {
-        dataVector[i] = distribution(generator);
+        vectorA[i] = distribution(generator);
+        vectorB[i] = distribution(generator);
     }
 
     // Warm-up
     {
-        volatile long long warmUpSum = 0;
+        volatile double warmUpSum = 0.0;
         for (int i = 0; i < std::min(problemSize, 1000); ++i) {
-            warmUpSum += dataVector[i];
+            warmUpSum += vectorA[i] * vectorB[i];
         }
         (void)warmUpSum;
     }
 
     int numThreads = omp_get_max_threads();
-    int globalMin = std::numeric_limits<int>::max();
+    double globalSum = 0.0;
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
     if (mode == "reduction") {
-        #pragma omp parallel for reduction(min: globalMin)
+        #pragma omp parallel for reduction(+:globalSum)
         for (int i = 0; i < problemSize; ++i) {
-            if (dataVector[i] < globalMin) globalMin = dataVector[i];
+            globalSum += vectorA[i] * vectorB[i];
         }
-    } else if (mode == "no_reduction") {
+    }
+    else if (mode == "no_reduction") {
         #pragma omp parallel
         {
-            int localMin = std::numeric_limits<int>::max();
-
+            double localSum = 0.0;
             #pragma omp for
             for (int i = 0; i < problemSize; ++i) {
-                if (dataVector[i] < localMin) 
-                    localMin = dataVector[i];
+                localSum += vectorA[i] * vectorB[i];
             }
 
             #pragma omp critical
             {
-                if (localMin < globalMin)
-                    globalMin = localMin;
+                globalSum += localSum;
             }
         }
-    } else {
+    }
+    else {
         std::cerr << "Unknown mode: " << mode << "\n";
         return 2;
     }
@@ -72,7 +71,6 @@ int main(int argc, char** argv) {
     auto endTime = std::chrono::high_resolution_clock::now();
     double timeSeconds = std::chrono::duration<double>(endTime - startTime).count();
 
-    std::cout << problemSize << "," << numThreads << "," << mode << "," << timeSeconds << "," << globalMin << std::endl;
-
+    std::cout << problemSize << "," << numThreads << "," << mode << "," << timeSeconds << "," << globalSum << std::endl;
     return 0;
 }

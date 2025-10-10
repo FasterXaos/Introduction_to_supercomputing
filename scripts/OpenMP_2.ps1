@@ -8,8 +8,8 @@ $ErrorActionPreference = "Stop"
 $buildDir = Join-Path $ProjectRoot "build"
 $binDir = Join-Path $buildDir "bin"
 $resultsDir = Join-Path $ProjectRoot "results"
-$exeName = "OpenMP_1.exe"
-$csvPath = Join-Path $resultsDir "OpenMP_1.csv"
+$exeName = "OpenMP_2.exe"
+$csvPath = Join-Path $resultsDir "OpenMP_2.csv"
 
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
@@ -34,9 +34,9 @@ if (-not (Test-Path $metadataPath)) {
     "buildDate: $(Get-Date -Format o)" | Out-File -FilePath $metadataPath -Append -Encoding utf8
 }
 
-"testType,problemSize,numThreads,mode,timeSeconds,minValue,runIndex,ompEnv" | Out-File -FilePath $csvPath -Encoding utf8
+"testType,problemSize,numThreads,mode,timeSeconds,scalarProduct,runIndex,ompEnv" | Out-File -FilePath $csvPath -Encoding utf8
 
-$problemSizeList = @(1000000, 5000000, 10000000, 50000000, 100000000)
+$problemSizeList = @(1000000, 5000000, 10000000, 50000000)
 $threadList = @(1, 2, 4, 6, 8, 16, 32)
 $modeList = @("reduction", "no_reduction")
 $numRuns = 5
@@ -52,16 +52,16 @@ foreach ($mode in $modeList) {
                     Write-Warning "Process returned non-zero exit code ($LASTEXITCODE). Skipping this run."
                     continue
                 }
-				
-				$parts = ($processInfo -split ',') | ForEach-Object { $_.Trim() }
-				if ($parts.Count -lt 5) {
-					Write-Warning "Unexpected process output (expected 5 comma-separated fields): '$processInfo'. Skipping."
-					continue
-				}
 
-				# parts: [0]=problemSize, [1]=numThreads, [2]=mode, [3]=timeSeconds, [4]=minValue
-				$csvLine = "OpenMP_1,$($parts[0]),$($parts[1]),$($parts[2]),$($parts[3]),$($parts[4]),$runIndex,OMP_NUM_THREADS=$($env:OMP_NUM_THREADS)"
-				$csvLine | Out-File -FilePath $csvPath -Append -Encoding utf8
+                $parts = ($processInfo -split ',') | ForEach-Object { $_.Trim() }
+                if ($parts.Count -lt 5) {
+                    Write-Warning "Unexpected process output (expected 5 comma-separated fields): '$processInfo'. Skipping."
+                    continue
+                }
+
+                # parts: [0]=problemSize, [1]=numThreads, [2]=mode, [3]=timeSeconds, [4]=scalarProduct
+                $csvLine = "OpenMP_2,$($parts[0]),$($parts[1]),$($parts[2]),$($parts[3]),$($parts[4]),$runIndex,OMP_NUM_THREADS=$($env:OMP_NUM_THREADS)"
+                $csvLine | Out-File -FilePath $csvPath -Append -Encoding utf8
 
                 Write-Host "$(Get-Date -Format 's') appended: mode=$mode size=$problemSize threads=$threads run=$runIndex"
             }

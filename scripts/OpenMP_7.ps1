@@ -8,8 +8,8 @@ $ErrorActionPreference = "Stop"
 $buildDir = Join-Path $ProjectRoot "build"
 $binDir = Join-Path $buildDir "bin"
 $resultsDir = Join-Path $ProjectRoot "results"
-$exeName = "OpenMP_1.exe"
-$csvPath = Join-Path $resultsDir "OpenMP_1.csv"
+$exeName = "OpenMP_7.exe"
+$csvPath = Join-Path $resultsDir "OpenMP_7.csv"
 
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
@@ -21,7 +21,7 @@ Write-Host "Configuring and building via CMake..."
 $exePath = Join-Path $binDir $exeName
 
 if (-not (Test-Path $exePath)) {
-    Write-Error "Executable not found at $exePath. Проверьте, что CMakeLists.txt находится в $ProjectRoot и сборка прошла успешно."
+    Write-Error "Executable not found at $exePath. Проверьте сборку."
     exit 1
 }
 
@@ -34,11 +34,11 @@ if (-not (Test-Path $metadataPath)) {
     "buildDate: $(Get-Date -Format o)" | Out-File -FilePath $metadataPath -Append -Encoding utf8
 }
 
-"testType,problemSize,numThreads,mode,timeSeconds,minValue,runIndex,ompEnv" | Out-File -FilePath $csvPath -Encoding utf8
+"testType,problemSize,numThreads,mode,timeSeconds,globalSum,runIndex,ompEnv" | Out-File -FilePath $csvPath -Encoding utf8
 
-$problemSizeList = @(1000000, 5000000, 10000000, 50000000, 100000000)
+$problemSizeList = @(500000, 1000000, 5000000)
 $threadList = @(1, 2, 4, 6, 8, 16, 32)
-$modeList = @("reduction", "no_reduction")
+$modeList = @("reduction", "atomic", "critical", "lock")
 $numRuns = 5
 
 foreach ($mode in $modeList) {
@@ -52,18 +52,18 @@ foreach ($mode in $modeList) {
                     Write-Warning "Process returned non-zero exit code ($LASTEXITCODE). Skipping this run."
                     continue
                 }
-				
-				$parts = ($processInfo -split ',') | ForEach-Object { $_.Trim() }
-				if ($parts.Count -lt 5) {
-					Write-Warning "Unexpected process output (expected 5 comma-separated fields): '$processInfo'. Skipping."
-					continue
-				}
 
-				# parts: [0]=problemSize, [1]=numThreads, [2]=mode, [3]=timeSeconds, [4]=minValue
-				$csvLine = "OpenMP_1,$($parts[0]),$($parts[1]),$($parts[2]),$($parts[3]),$($parts[4]),$runIndex,OMP_NUM_THREADS=$($env:OMP_NUM_THREADS)"
-				$csvLine | Out-File -FilePath $csvPath -Append -Encoding utf8
+                $parts = ($processInfo -split ',') | ForEach-Object { $_.Trim() }
+                if ($parts.Count -lt 5) {
+                    Write-Warning "Unexpected process output (expected 5 comma-separated fields): '$processInfo'. Skipping."
+                    continue
+                }
 
-                Write-Host "$(Get-Date -Format 's') appended: mode=$mode size=$problemSize threads=$threads run=$runIndex"
+                # parts: [0]=problemSize, [1]=numThreads, [2]=mode, [3]=timeSeconds, [4]=globalSum
+                $csvLine = "OpenMP_7,$($parts[0]),$($parts[1]),$($parts[2]),$($parts[3]),$($parts[4]),$runIndex,OMP_NUM_THREADS=$($env:OMP_NUM_THREADS)"
+                $csvLine | Out-File -FilePath $csvPath -Append -Encoding utf8
+
+                Write-Host "$(Get-Date -Format 's') appended: mode=$mode N=$problemSize threads=$threads run=$runIndex"
             }
         }
     }

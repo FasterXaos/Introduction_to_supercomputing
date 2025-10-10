@@ -8,8 +8,8 @@ $ErrorActionPreference = "Stop"
 $buildDir = Join-Path $ProjectRoot "build"
 $binDir = Join-Path $buildDir "bin"
 $resultsDir = Join-Path $ProjectRoot "results"
-$exeName = "OpenMP_1.exe"
-$csvPath = Join-Path $resultsDir "OpenMP_1.csv"
+$exeName = "OpenMP_4.exe"
+$csvPath = Join-Path $resultsDir "OpenMP_4.csv"
 
 New-Item -ItemType Directory -Force -Path $buildDir | Out-Null
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
@@ -34,36 +34,36 @@ if (-not (Test-Path $metadataPath)) {
     "buildDate: $(Get-Date -Format o)" | Out-File -FilePath $metadataPath -Append -Encoding utf8
 }
 
-"testType,problemSize,numThreads,mode,timeSeconds,minValue,runIndex,ompEnv" | Out-File -FilePath $csvPath -Encoding utf8
+"testType,matrixSize,numThreads,mode,timeSeconds,maxOfRowMins,runIndex,ompEnv" | Out-File -FilePath $csvPath -Encoding utf8
 
-$problemSizeList = @(1000000, 5000000, 10000000, 50000000, 100000000)
-$threadList = @(1, 2, 4, 6, 8, 16, 32)
+$matrixSizeList = @(500, 1000, 2000, 4000)
+$threadList = @(1, 2, 4, 6, 8, 16, 32, 64)
 $modeList = @("reduction", "no_reduction")
 $numRuns = 5
 
 foreach ($mode in $modeList) {
-    foreach ($problemSize in $problemSizeList) {
+    foreach ($matrixSize in $matrixSizeList) {
         foreach ($threads in $threadList) {
             $env:OMP_NUM_THREADS = "$threads"
             for ($runIndex = 1; $runIndex -le $numRuns; $runIndex++) {
                 $seed = Get-Random
-                $processInfo = & "$exePath" $problemSize $mode $seed
+                $processInfo = & "$exePath" $matrixSize $mode $seed
                 if ($LASTEXITCODE -ne 0) {
                     Write-Warning "Process returned non-zero exit code ($LASTEXITCODE). Skipping this run."
                     continue
                 }
-				
-				$parts = ($processInfo -split ',') | ForEach-Object { $_.Trim() }
-				if ($parts.Count -lt 5) {
-					Write-Warning "Unexpected process output (expected 5 comma-separated fields): '$processInfo'. Skipping."
-					continue
-				}
 
-				# parts: [0]=problemSize, [1]=numThreads, [2]=mode, [3]=timeSeconds, [4]=minValue
-				$csvLine = "OpenMP_1,$($parts[0]),$($parts[1]),$($parts[2]),$($parts[3]),$($parts[4]),$runIndex,OMP_NUM_THREADS=$($env:OMP_NUM_THREADS)"
-				$csvLine | Out-File -FilePath $csvPath -Append -Encoding utf8
+                $parts = ($processInfo -split ',') | ForEach-Object { $_.Trim() }
+                if ($parts.Count -lt 5) {
+                    Write-Warning "Unexpected process output (expected 5 comma-separated fields): '$processInfo'. Skipping."
+                    continue
+                }
 
-                Write-Host "$(Get-Date -Format 's') appended: mode=$mode size=$problemSize threads=$threads run=$runIndex"
+                # parts: [0]=matrixSize, [1]=numThreads, [2]=mode, [3]=timeSeconds, [4]=maxOfRowMins
+                $csvLine = "OpenMP_4,$($parts[0]),$($parts[1]),$($parts[2]),$($parts[3]),$($parts[4]),$runIndex,OMP_NUM_THREADS=$($env:OMP_NUM_THREADS)"
+                $csvLine | Out-File -FilePath $csvPath -Append -Encoding utf8
+
+                Write-Host "$(Get-Date -Format 's') appended: mode=$mode size=$matrixSize threads=$threads run=$runIndex"
             }
         }
     }
