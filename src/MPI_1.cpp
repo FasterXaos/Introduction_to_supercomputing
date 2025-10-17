@@ -1,0 +1,135 @@
+#include <mpi.h>
+#include <iostream>
+#include <vector>
+#include <random>
+#include <chrono>
+#include <string>
+#include <iomanip>
+
+// Usage:
+//   MPI_1 <vectorSize> <mode> [seed]
+//   mode: min | max
+// 
+// Example:
+//   mpiexec -n 4 ./MPI_1 1000000 min 12345
+
+int main(int argc, char** argv) {
+    MPI_Init(&argc, &argv);
+
+    int worldSize = 1;
+    int worldRank = 0;
+    MPI_Comm_size(MPI_COMM_WORLD, &worldSize);
+    MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
+
+    if (argc < 3) {
+        if (worldRank == 0) {
+            std::cerr << "Usage: " << argv[0] << " <vectorSize> <mode> [seed]\n";
+        }
+        MPI_Finalize();
+        return 1;
+    }
+
+    long long vectorSize = std::stoll(argv[1]);
+    std::string mode = argv[2];
+    unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 123456u;
+
+    if (vectorSize <= 0) {
+        if (worldRank == 0) std::cerr << "vectorSize must be > 0\n";
+        MPI_Finalize();
+        return 2;
+    }
+
+    bool wantMin = (mode == "min");
+    bool wantMax = (mode == "max");
+    if (!wantMin && !wantMax) {
+        if (worldRank == 0) std::cerr << "Unknown mode: " << mode << " (use min|max)\n";
+        MPI_Finalize();
+        return 3;
+    }
+
+    std::vector<double> fullVector;
+    std::vector<int> sendCounts(worldSize, 0);
+    std::vector<int> displacements(worldSize, 0);
+
+    if (worldRank == 0) {
+        fullVector.resize(static_cast<size_t>(vectorSize));
+        std::mt19937_64 generator(static_cast<unsigned long long>(seed));
+        std::uniform_real_distribution<double> distribution(0.0, 1.0e6);
+        for (long long i = 0; i < vectorSize; ++i) {
+            fullVector[static_cast<size_t>(i)] = distribution(generator);
+        }
+
+        long long base = vectorSize / worldSize;
+        int remainder = static_cast<int>(vectorSize % worldSize);
+        int offset = 0;
+        for (int p = 0; p < worldSize; ++p) {
+            int count = static_cast<int>(base + (p < remainder ? 1 : 0));
+            sendCounts[p] = count;
+            displacements[p] = offset;
+            offset += count;
+        }
+    }
+
+    MPI_Bcast(sendCounts.data(), worldSize, MPI_INT, 0, MPI_COMM_WORLD);
+
+    int localCount = sendCounts[worldRank];
+    std::vector<double> localBuffer(static_cast<size_t>(localCount));
+
+    if (worldRank != 0) {
+        displacements.assign(worldSize, 0);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    double timeStart = MPI_Wtime();
+
+    MPI_Scatterv(
+        (worldRank == 0 ? fullVector.data() : nullptr),
+        sendCounts.data(),
+        displacements.data(),
+        MPI_DOUBLE,
+        (localCount > 0 ? localBuffer.data() : MPI_BOTTOM),
+        localCount,
+        MPI_DOUBLE,
+        0,
+        MPI_COMM_WORLD
+    );
+
+    double localResult;
+    if (localCount == 0) {
+        localResult = wantMin ? std::numeric_limits<double>::max() : std::numeric_limits<double>::lowest();
+    }
+    else {
+        if (wantMin) {
+            localResult = localBuffer[0];
+            for (int i = 1; i < localCount; ++i) {
+                if (localBuffer[static_cast<size_t>(i)] < localResult)
+                    localResult = localBuffer[static_cast<size_t>(i)];
+            }
+        }
+        else {
+            localResult = localBuffer[0];
+            for (int i = 1; i < localCount; ++i) {
+                if (localBuffer[static_cast<size_t>(i)] > localResult)
+                    localResult = localBuffer[static_cast<size_t>(i)];
+            }
+        }
+    }
+
+    double globalResult = 0.0;
+    if (wantMin) {
+        MPI_Reduce(&localResult, &globalResult, 1, MPI_DOUBLE, MPI_MIN, 0, MPI_COMM_WORLD);
+    }
+    else {
+        MPI_Reduce(&localResult, &globalResult, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+    }
+
+    MPI_Barrier(MPI_COMM_WORLD);
+    double timeEnd = MPI_Wtime();
+    double timeSeconds = timeEnd - timeStart;
+
+    if (worldRank == 0)
+        std::cout << vectorSize << "," << worldSize << "," << mode << "," << std::fixed << std::setprecision(6) << timeSeconds << "," << globalResult << std::endl;
+
+    MPI_Finalize();
+    return 0;
+}
