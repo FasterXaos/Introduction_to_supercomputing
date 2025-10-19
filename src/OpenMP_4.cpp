@@ -6,9 +6,10 @@
 #include <string>
 #include <omp.h>
 
+// Usage: OpenMP_4 <matrixSize> <mode> [seed]
+// mode: reduction | no_reduction
+
 int main(int argc, char** argv) {
-    // Usage: OpenMP_4 <matrixSize> <mode> [seed]
-    // mode: reduction | no_reduction
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <matrixSize> <mode> [seed]\n";
         return 1;

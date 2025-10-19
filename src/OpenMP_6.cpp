@@ -80,17 +80,14 @@ int main(int argc, char** argv) {
     #pragma omp parallel default(none) shared(problemSize, heavyProbability, lightWork, heavyWork, seed) reduction(+:globalSum)
     {
         int threadId = omp_get_thread_num();
-        // create thread-local RNG (deterministic given seed and threadId)
         std::mt19937 localRng(seed + static_cast<unsigned int>(threadId) * 6969u);
         std::uniform_real_distribution<double> dist(0.0, 1.0);
 
         #pragma omp for schedule(runtime)
         for (int i = 0; i < problemSize; ++i) {
-            // decide whether this iteration is heavy
             double r = dist(localRng);
             int innerLoops = (r < heavyProbability) ? heavyWork : lightWork;
 
-            // do artificial computational work (pure CPU)
             double localValue = 0.0;
             // use simple trig-work which is not easily optimized away
             for (int k = 0; k < innerLoops; ++k) {

@@ -1,9 +1,3 @@
-// Usage:
-//   MPI_8 <messageSizeBytes> <mode> [numIterations]
-//   modes: separate | sendrecv | isend_irecv
-// Example:
-//   mpiexec -n 2 ./MPI_7 65536 sendrecv 10000
-
 #include <mpi.h>
 #include <iostream>
 #include <vector>
@@ -11,6 +5,12 @@
 #include <iomanip>
 #include <cstdlib>
 #include <algorithm>
+
+// Usage:
+//   MPI_8 <messageSizeBytes> <mode> [numIterations]
+//   modes: separate | sendrecv | isend_irecv
+// Example:
+//   mpiexec -n 2 ./MPI_7 65536 sendrecv 10000
 
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);

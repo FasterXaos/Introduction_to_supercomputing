@@ -1,3 +1,14 @@
+#include <mpi.h>
+#include <iostream>
+#include <vector>
+#include <string>
+#include <chrono>
+#include <random>
+#include <cstdint>
+#include <cstring>
+#include <iomanip>
+#include <algorithm>
+
 // Implemented collectives (custom):
 //   customBroadcast (binomial tree)
 //   customReduce (binomial tree, sum)
@@ -11,17 +22,6 @@
 // opName: bcast | reduce | scatter | gather | allgather | alltoall
 // Example:
 //   mpiexec -n 4 ./MPI_9 bcast 65536 200
-
-#include <mpi.h>
-#include <iostream>
-#include <vector>
-#include <string>
-#include <chrono>
-#include <random>
-#include <cstdint>
-#include <cstring>
-#include <iomanip>
-#include <algorithm>
 
 using std::size_t;
 

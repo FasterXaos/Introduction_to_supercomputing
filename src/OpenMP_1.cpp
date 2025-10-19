@@ -7,9 +7,10 @@
 #include <algorithm>
 #include <omp.h>
 
+// Usage: OpenMP_1 <problemSize> <mode> [seed]
+// mode: reduction | no_reduction
+
 int main(int argc, char** argv) {
-    // Usage: OpenMP_1 <problemSize> <mode> [seed]
-    // mode: reduction | no_reduction
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <problemSize> <mode> [seed]\n";
         return 1;
@@ -45,7 +46,8 @@ int main(int argc, char** argv) {
     if (mode == "reduction") {
         #pragma omp parallel for reduction(min: globalMin)
         for (int i = 0; i < problemSize; ++i) {
-            if (dataVector[i] < globalMin) globalMin = dataVector[i];
+            if (dataVector[i] < globalMin)
+                globalMin = dataVector[i];
         }
     } else if (mode == "no_reduction") {
         #pragma omp parallel

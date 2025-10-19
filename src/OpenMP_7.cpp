@@ -15,7 +15,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    long long problemSize = static_cast<long long>(std::stoll(argv[1]));
+    int problemSize = std::stoi(argv[1]);
     std::string mode = argv[2];
     unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 123456u;
 
@@ -24,30 +24,22 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    std::vector<double> vectorA;
-    std::vector<double> vectorB;
-    try {
-        vectorA.resize(static_cast<size_t>(problemSize));
-        vectorB.resize(static_cast<size_t>(problemSize));
-    }
-    catch (const std::bad_alloc&) {
-        std::cerr << "Failed to allocate vectors of size " << problemSize << "\n";
-        return 3;
-    }
+    std::vector<double> vectorA(problemSize);
+    std::vector<double> vectorB(problemSize);
 
     std::mt19937 generator(seed);
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
-    for (long long i = 0; i < problemSize; ++i) {
-        vectorA[static_cast<size_t>(i)] = distribution(generator);
-        vectorB[static_cast<size_t>(i)] = distribution(generator);
+    for (std::size_t i = 0; i < problemSize; ++i) {
+        vectorA[i] = distribution(generator);
+        vectorB[i] = distribution(generator);
     }
 
     // Warm-up
     {
         volatile double warmSum = 0.0;
-        long long warmCount = std::min(problemSize, 1000LL);
-        for (long long i = 0; i < warmCount; ++i) {
-            warmSum += vectorA[static_cast<size_t>(i)] * vectorB[static_cast<size_t>(i)];
+        int warmCount = std::min(problemSize, 1000);
+        for (std::size_t i = 0; i < warmCount; ++i) {
+            warmSum += vectorA[i] * vectorB[i];
         }
         (void)warmSum;
     }
@@ -59,22 +51,22 @@ int main(int argc, char** argv) {
 
     if (mode == "reduction") {
         #pragma omp parallel for reduction(+:globalSum)
-        for (long long i = 0; i < problemSize; ++i) {
-            globalSum += vectorA[static_cast<size_t>(i)] * vectorB[static_cast<size_t>(i)];
+        for (std::size_t i = 0; i < problemSize; ++i) {
+            globalSum += vectorA[i] * vectorB[i];
         }
     }
     else if (mode == "atomic") {
         #pragma omp parallel for
-        for (long long i = 0; i < problemSize; ++i) {
-            double localValue = vectorA[static_cast<size_t>(i)] * vectorB[static_cast<size_t>(i)];
+        for (std::size_t i = 0; i < problemSize; ++i) {
+            double localValue = vectorA[i] * vectorB[i];
             #pragma omp atomic
             globalSum += localValue;
         }
     }
     else if (mode == "critical") {
         #pragma omp parallel for
-        for (long long i = 0; i < problemSize; ++i) {
-            double localValue = vectorA[static_cast<size_t>(i)] * vectorB[static_cast<size_t>(i)];
+        for (std::size_t i = 0; i < problemSize; ++i) {
+            double localValue = vectorA[i] * vectorB[i];
             #pragma omp critical
             {
                 globalSum += localValue;
@@ -85,8 +77,8 @@ int main(int argc, char** argv) {
         omp_lock_t globalLock;
         omp_init_lock(&globalLock);
         #pragma omp parallel for
-        for (long long i = 0; i < problemSize; ++i) {
-            double localValue = vectorA[static_cast<size_t>(i)] * vectorB[static_cast<size_t>(i)];
+        for (std::size_t i = 0; i < problemSize; ++i) {
+            double localValue = vectorA[i] * vectorB[i];
             omp_set_lock(&globalLock);
             globalSum += localValue;
             omp_unset_lock(&globalLock);

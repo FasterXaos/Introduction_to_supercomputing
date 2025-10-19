@@ -5,9 +5,10 @@
 #include <string>
 #include <omp.h>
 
+// Usage: OpenMP_2 <problemSize> <mode> [seed]
+// mode: reduction | no_reduction
+
 int main(int argc, char** argv) {
-    // Usage: OpenMP_2 <problemSize> <mode> [seed]
-    // mode: reduction | no_reduction
     if (argc < 3) {
         std::cerr << "Usage: " << argv[0] << " <problemSize> <mode> [seed]\n";
         return 1;

@@ -1,4 +1,3 @@
-# scripts/MPI_9.ps1
 param(
     [string]$ProjectRoot = (Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Definition))
 )

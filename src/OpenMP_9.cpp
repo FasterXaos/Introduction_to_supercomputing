@@ -59,10 +59,12 @@ int main(int argc, char** argv) {
     double globalMaxOfRowMins = std::numeric_limits<double>::lowest();
 
     if (mode == "nested") {
-        omp_set_nested(1);
+        omp_set_max_active_levels(2);
+        // omp_set_nested(1);
     }
     else {
-        omp_set_nested(0);
+        omp_set_max_active_levels(1);
+        //omp_set_nested(0);
     }
 
     auto startTime = std::chrono::high_resolution_clock::now();
@@ -107,9 +109,7 @@ int main(int argc, char** argv) {
                 double localMin = std::numeric_limits<double>::max();
                 size_t rowOffset = static_cast<size_t>(i) * static_cast<size_t>(matrixSize);
 
-                omp_set_num_threads(innerThreads);
-
-                #pragma omp parallel for reduction(min:localMin) schedule(static)
+                #pragma omp parallel for reduction(min:localMin) schedule(static) num_threads(innerThreads)
                 for (int j = 0; j < matrixSize; ++j) {
                     double val = matrixData[rowOffset + static_cast<size_t>(j)];
                     if (val < localMin) localMin = val;
@@ -117,7 +117,8 @@ int main(int argc, char** argv) {
 
                 #pragma omp critical
                 {
-                    if (localMin > globalMaxOfRowMins) globalMaxOfRowMins = localMin;
+                    if (localMin > globalMaxOfRowMins)
+                        globalMaxOfRowMins = localMin;
                 }
             }
         }

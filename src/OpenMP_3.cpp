@@ -5,14 +5,15 @@
 #include <omp.h>
 #include <cstdint>
 
+// Usage: OpenMP_3 <numIntervals> <mode> <a> <b>
+// mode: reduction | no_reduction
+    
 // The simplest function. It can be replaced/expanded if necessary.
 static inline double integrandFunction(double x) {
     return std::sin(x);
 }
 
 int main(int argc, char** argv) {
-    // Usage: OpenMP_3 <numIntervals> <mode> <a> <b>
-    // mode: reduction | no_reduction
     if (argc < 5) {
         std::cerr << "Usage: " << argv[0] << " <numIntervals> <mode> <a> <b>\n";
         return 1;
