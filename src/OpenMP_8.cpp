@@ -72,13 +72,15 @@ int main(int argc, char** argv) {
     if (mode == "sequential" || numThreadsReported < 2) {
         std::ifstream inFile(inputFilePath, std::ios::binary);
         if (!inFile) {
-            std::cerr << "Failed to open input file for reading\n"; return 4;
+            std::cerr << "Failed to open input file for reading\n";
+            return 4;
         }
 
         InputHeader header;
         inFile.read(reinterpret_cast<char*>(&header), sizeof(header));
         if (header.numVectors != static_cast<unsigned long long>(numVectors) || header.vectorSize != static_cast<unsigned long long>(vectorSize)) {
-            std::cerr << "Header mismatch\n"; return 5;
+            std::cerr << "Header mismatch\n";
+            return 5;
         }
 
         std::vector<double> vectorA(vectorSize);

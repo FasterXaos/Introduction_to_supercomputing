@@ -4,6 +4,7 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <omp.h>
 
 // Usage:
@@ -25,15 +26,15 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    int problemSize = std::stoi(argv[1]);
-    std::string scheduleType = argv[2];
-    int chunkSize = std::stoi(argv[3]);
-    double heavyProbability = std::stod(argv[4]);
-    int lightWork = std::stoi(argv[5]);
-    int heavyWork = std::stoi(argv[6]);
-    unsigned int seed = (argc >= 8) ? static_cast<unsigned int>(std::stoul(argv[7])) : 123456u;
+    const std::size_t problemSize = static_cast<std::size_t>(std::stoull(argv[1]));
+    const std::string scheduleType = argv[2];
+    const int chunkSize = std::stoi(argv[3]);
+    const double heavyProbability = std::stod(argv[4]);
+    const int lightWork = std::stoi(argv[5]);
+    const int heavyWork = std::stoi(argv[6]);
+    const unsigned int seed = (argc >= 8) ? static_cast<unsigned int>(std::stoul(argv[7])) : 123456u;
 
-    if (problemSize <= 0 || chunkSize <= 0 || lightWork < 0 || heavyWork < 0) {
+    if (problemSize == 0 || chunkSize <= 0 || lightWork < 0 || heavyWork < 0) {
         std::cerr << "Invalid numeric argument(s)\n";
         return 2;
     }
@@ -59,13 +60,15 @@ int main(int argc, char** argv) {
 
     omp_set_schedule(ompScheduleKind, chunkSize);
 
-    int numThreadsReported = omp_get_max_threads();
+    const int numThreadsReported = omp_get_max_threads();
     volatile double warmUp = 0.0;
 
     // Warm-up
     {
-        for (int i = 0; i < std::min(problemSize, 100); ++i) {
-            for (int k = 0; k < std::min(10, lightWork); ++k) {
+        const std::size_t warmIterations = std::min<std::size_t>(problemSize, static_cast<std::size_t>(100));
+        for (std::size_t i = 0; i < warmIterations; ++i) {
+            const int innerLimit = std::min(10, lightWork);
+            for (int k = 0; k < innerLimit; ++k) {
                 warmUp += std::sin(static_cast<double>(i + k));
             }
         }
@@ -76,17 +79,16 @@ int main(int argc, char** argv) {
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
-
     #pragma omp parallel default(none) shared(problemSize, heavyProbability, lightWork, heavyWork, seed) reduction(+:globalSum)
     {
-        int threadId = omp_get_thread_num();
-        std::mt19937 localRng(seed + static_cast<unsigned int>(threadId) * 6969u);
+        const int threadId = omp_get_thread_num();
+        std::mt19937_64 localRng(static_cast<unsigned long long>(seed) + static_cast<unsigned long long>(threadId) * 6969ull);
         std::uniform_real_distribution<double> dist(0.0, 1.0);
 
         #pragma omp for schedule(runtime)
-        for (int i = 0; i < problemSize; ++i) {
+        for (std::size_t i = 0; i < problemSize; ++i) {
             double r = dist(localRng);
-            int innerLoops = (r < heavyProbability) ? heavyWork : lightWork;
+            const int innerLoops = (r < heavyProbability) ? heavyWork : lightWork;
 
             double localValue = 0.0;
             // use simple trig-work which is not easily optimized away

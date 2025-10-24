@@ -5,6 +5,7 @@
 #include <string>
 #include <omp.h>
 #include <limits>
+#include <algorithm>
 
 // Usage: OpenMP_7 <problemSize> <mode> [seed]
 // mode: reduction | atomic | critical | lock
@@ -15,11 +16,11 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    int problemSize = std::stoi(argv[1]);
-    std::string mode = argv[2];
-    unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 123456u;
+    const std::size_t problemSize = static_cast<std::size_t>(std::stoull(argv[1]));
+    const std::string mode = argv[2];
+    const unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 123456u;
 
-    if (problemSize <= 0) {
+    if (problemSize == 0) {
         std::cerr << "problemSize must be > 0\n";
         return 2;
     }
@@ -27,7 +28,7 @@ int main(int argc, char** argv) {
     std::vector<double> vectorA(problemSize);
     std::vector<double> vectorB(problemSize);
 
-    std::mt19937 generator(seed);
+    std::mt19937_64 generator(static_cast<unsigned long long>(seed));
     std::uniform_real_distribution<double> distribution(0.0, 1.0);
     for (std::size_t i = 0; i < problemSize; ++i) {
         vectorA[i] = distribution(generator);
@@ -37,14 +38,14 @@ int main(int argc, char** argv) {
     // Warm-up
     {
         volatile double warmSum = 0.0;
-        int warmCount = std::min(problemSize, 1000);
+        const std::size_t warmCount = std::min<std::size_t>(problemSize, static_cast<std::size_t>(1000));
         for (std::size_t i = 0; i < warmCount; ++i) {
             warmSum += vectorA[i] * vectorB[i];
         }
         (void)warmSum;
     }
 
-    int numThreadsReported = omp_get_max_threads();
+    const int numThreadsReported = omp_get_max_threads();
     double globalSum = 0.0;
 
     auto startTime = std::chrono::high_resolution_clock::now();

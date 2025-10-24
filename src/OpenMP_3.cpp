@@ -4,10 +4,11 @@
 #include <string>
 #include <omp.h>
 #include <cstdint>
+#include <algorithm>
 
 // Usage: OpenMP_3 <numIntervals> <mode> <a> <b>
 // mode: reduction | no_reduction
-    
+
 // The simplest function. It can be replaced/expanded if necessary.
 static inline double integrandFunction(double x) {
     return std::sin(x);
@@ -19,10 +20,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::int64_t numIntervals = static_cast<std::int64_t>(std::stoll(argv[1]));
-    std::string mode = argv[2];
-    double lowerBound = std::stod(argv[3]);
-    double upperBound = std::stod(argv[4]);
+    const std::int64_t numIntervals = static_cast<std::int64_t>(std::stoll(argv[1]));
+    const std::string mode = argv[2];
+    const double lowerBound = std::stod(argv[3]);
+    const double upperBound = std::stod(argv[4]);
 
     if (numIntervals <= 0) {
         std::cerr << "numIntervals must be > 0\n";
@@ -37,7 +38,7 @@ int main(int argc, char** argv) {
     {
         double warmUpSum = 0.0;
         double warmUpH = (upperBound - lowerBound) / static_cast<double>(numIntervals);
-        int warmUpSteps = static_cast<int>(std::min<std::int64_t>(numIntervals, 1000));
+        const int warmUpSteps = static_cast<int>(std::min<std::int64_t>(numIntervals, static_cast<std::int64_t>(1000)));
         for (int i = 0; i < warmUpSteps; ++i) {
             double x = lowerBound + static_cast<double>(i) * warmUpH;
             warmUpSum += integrandFunction(x);
@@ -45,9 +46,9 @@ int main(int argc, char** argv) {
         (void)warmUpSum;
     }
 
-    int numThreadsReported = omp_get_max_threads();
+    const int numThreadsReported = omp_get_max_threads();
     double integralResult = 0.0;
-    double stepSize = (upperBound - lowerBound) / static_cast<double>(numIntervals);
+    const double stepSize = (upperBound - lowerBound) / static_cast<double>(numIntervals);
 
     auto startTime = std::chrono::high_resolution_clock::now();
 

@@ -1,7 +1,4 @@
 build/
-
-results/*.csv
-results/metadata.txt
-results/OpenMP_8_input.bin
+results/
 
 src/.vs/

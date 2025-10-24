@@ -16,47 +16,49 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    int problemSize = std::stoi(argv[1]);
-    std::string mode = argv[2];
-    unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 12345u;
+    const std::size_t problemSize = static_cast<std::size_t>(std::stoull(argv[1]));
+    const std::string mode = argv[2];
+    const unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 12345u;
 
     std::vector<int> dataVector;
     dataVector.resize(problemSize);
-    std::mt19937 generator(seed);
+    std::mt19937_64 generator(static_cast<unsigned long long>(seed));
     std::uniform_int_distribution<int> distribution(0, 1000000000);
 
-    for (int i = 0; i < problemSize; ++i) {
+    for (std::size_t i = 0; i < problemSize; ++i) {
         dataVector[i] = distribution(generator);
     }
 
     // Warm-up
     {
         volatile long long warmUpSum = 0;
-        for (int i = 0; i < std::min(problemSize, 1000); ++i) {
+        const std::size_t warmUpLimit = std::min<std::size_t>(problemSize, static_cast<std::size_t>(1000));
+        for (std::size_t i = 0; i < warmUpLimit; ++i) {
             warmUpSum += dataVector[i];
         }
         (void)warmUpSum;
     }
 
-    int numThreads = omp_get_max_threads();
+    const int numThreads = omp_get_max_threads();
     int globalMin = std::numeric_limits<int>::max();
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
     if (mode == "reduction") {
         #pragma omp parallel for reduction(min: globalMin)
-        for (int i = 0; i < problemSize; ++i) {
+        for (std::size_t i = 0; i < problemSize; ++i) {
             if (dataVector[i] < globalMin)
                 globalMin = dataVector[i];
         }
-    } else if (mode == "no_reduction") {
+    }
+    else if (mode == "no_reduction") {
         #pragma omp parallel
         {
             int localMin = std::numeric_limits<int>::max();
 
             #pragma omp for
-            for (int i = 0; i < problemSize; ++i) {
-                if (dataVector[i] < localMin) 
+            for (std::size_t i = 0; i < problemSize; ++i) {
+                if (dataVector[i] < localMin)
                     localMin = dataVector[i];
             }
 
@@ -66,7 +68,8 @@ int main(int argc, char** argv) {
                     globalMin = localMin;
             }
         }
-    } else {
+    }
+    else {
         std::cerr << "Unknown mode: " << mode << "\n";
         return 2;
     }

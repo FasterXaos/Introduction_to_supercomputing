@@ -5,7 +5,7 @@
 #include <limits>
 #include <string>
 #include <omp.h>
-#include <cstdlib>
+#include <algorithm>
 
 // Usage: OpenMP_9 <matrixSize> <mode> [innerThreads] [seed]
 // mode: outer | inner | nested
@@ -17,12 +17,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    int matrixSize = std::stoi(argv[1]);
-    std::string mode = argv[2];
-    int innerThreads = (argc >= 4) ? std::max(1, std::stoi(argv[3])) : 1;
-    unsigned int seed = (argc >= 5) ? static_cast<unsigned int>(std::stoul(argv[4])) : 12345u;
+    const std::size_t matrixSize = static_cast<std::size_t>(std::stoull(argv[1]));
+    const std::string mode = argv[2];
+    const int innerThreads = (argc >= 4) ? std::max(1, std::stoi(argv[3])) : 1;
+    const unsigned int seed = (argc >= 5) ? static_cast<unsigned int>(std::stoul(argv[4])) : 12345u;
 
-    if (matrixSize <= 0) {
+    if (matrixSize == 0) {
         std::cerr << "matrixSize must be > 0\n";
         return 2;
     }
@@ -31,51 +31,50 @@ int main(int argc, char** argv) {
         return 3;
     }
 
-    std::vector<double> matrixData(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize));
-    std::mt19937 generator(seed);
+    std::vector<double> matrixData(matrixSize * matrixSize);
+    std::mt19937_64 generator(static_cast<unsigned long long>(seed));
     std::uniform_real_distribution<double> distribution(0.0, 1.0e6);
 
-    for (int i = 0; i < matrixSize; ++i) {
-        size_t rowOffset = static_cast<size_t>(i) * static_cast<size_t>(matrixSize);
-        for (int j = 0; j < matrixSize; ++j) {
-            matrixData[rowOffset + static_cast<size_t>(j)] = distribution(generator);
+    for (std::size_t i = 0; i < matrixSize; ++i) {
+        const std::size_t rowOffset = i * matrixSize;
+        for (std::size_t j = 0; j < matrixSize; ++j) {
+            matrixData[rowOffset + j] = distribution(generator);
         }
     }
 
     // Warm-up
     {
         volatile double warmUpSum = 0.0;
-        int warmSteps = std::min(matrixSize, 8);
-        for (int i = 0; i < warmSteps; ++i) {
-            size_t rowOffset = static_cast<size_t>(i) * static_cast<size_t>(matrixSize);
-            for (int j = 0; j < std::min(matrixSize, 8); ++j) {
-                warmUpSum += matrixData[rowOffset + static_cast<size_t>(j)];
+        const std::size_t warmSteps = std::min<std::size_t>(matrixSize, static_cast<std::size_t>(8));
+        const std::size_t warmCols = std::min<std::size_t>(matrixSize, static_cast<std::size_t>(8));
+        for (std::size_t i = 0; i < warmSteps; ++i) {
+            const std::size_t rowOffset = i * matrixSize;
+            for (std::size_t j = 0; j < warmCols; ++j) {
+                warmUpSum += matrixData[rowOffset + j];
             }
         }
         (void)warmUpSum;
     }
 
-    int numThreadsReported = omp_get_max_threads();
+    const int numThreadsReported = omp_get_max_threads();
     double globalMaxOfRowMins = std::numeric_limits<double>::lowest();
 
     if (mode == "nested") {
         omp_set_max_active_levels(2);
-        // omp_set_nested(1);
     }
     else {
         omp_set_max_active_levels(1);
-        //omp_set_nested(0);
     }
 
     auto startTime = std::chrono::high_resolution_clock::now();
 
     if (mode == "outer") {
         #pragma omp parallel for reduction(max:globalMaxOfRowMins) schedule(dynamic)
-        for (int i = 0; i < matrixSize; ++i) {
+        for (std::size_t i = 0; i < matrixSize; ++i) {
             double localMin = std::numeric_limits<double>::max();
-            size_t rowOffset = static_cast<size_t>(i) * static_cast<size_t>(matrixSize);
-            for (int j = 0; j < matrixSize; ++j) {
-                double val = matrixData[rowOffset + static_cast<size_t>(j)];
+            const std::size_t rowOffset = i * matrixSize;
+            for (std::size_t j = 0; j < matrixSize; ++j) {
+                double val = matrixData[rowOffset + j];
                 if (val < localMin)
                     localMin = val;
             }
@@ -84,14 +83,15 @@ int main(int argc, char** argv) {
         }
     }
     else if (mode == "inner") {
-        for (int i = 0; i < matrixSize; ++i) {
+        for (std::size_t i = 0; i < matrixSize; ++i) {
             double localMin = std::numeric_limits<double>::max();
-            size_t rowOffset = static_cast<size_t>(i) * static_cast<size_t>(matrixSize);
+            const std::size_t rowOffset = i * matrixSize;
 
             #pragma omp parallel for reduction(min:localMin) schedule(static)
-            for (int j = 0; j < matrixSize; ++j) {
-                double val = matrixData[rowOffset + static_cast<size_t>(j)];
-                if (val < localMin) localMin = val;
+            for (std::size_t j = 0; j < matrixSize; ++j) {
+                double val = matrixData[rowOffset + j];
+                if (val < localMin)
+                    localMin = val;
             }
 
             #pragma omp critical
@@ -105,14 +105,15 @@ int main(int argc, char** argv) {
         #pragma omp parallel
         {
             #pragma omp for schedule(dynamic)
-            for (int i = 0; i < matrixSize; ++i) {
+            for (std::size_t i = 0; i < matrixSize; ++i) {
                 double localMin = std::numeric_limits<double>::max();
-                size_t rowOffset = static_cast<size_t>(i) * static_cast<size_t>(matrixSize);
+                const std::size_t rowOffset = i * matrixSize;
 
                 #pragma omp parallel for reduction(min:localMin) schedule(static) num_threads(innerThreads)
-                for (int j = 0; j < matrixSize; ++j) {
-                    double val = matrixData[rowOffset + static_cast<size_t>(j)];
-                    if (val < localMin) localMin = val;
+                for (std::size_t j = 0; j < matrixSize; ++j) {
+                    double val = matrixData[rowOffset + j];
+                    if (val < localMin)
+                        localMin = val;
                 }
 
                 #pragma omp critical
