@@ -34,7 +34,8 @@ int main(int argc, char** argv) {
     unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 123456u;
 
     if (vectorSize <= 0) {
-        if (worldRank == 0) std::cerr << "vectorSize must be > 0\n";
+        if (worldRank == 0)
+			std::cerr << "vectorSize must be > 0\n";
         MPI_Finalize();
         return 2;
     }
@@ -42,7 +43,8 @@ int main(int argc, char** argv) {
     bool wantMin = (mode == "min");
     bool wantMax = (mode == "max");
     if (!wantMin && !wantMax) {
-        if (worldRank == 0) std::cerr << "Unknown mode: " << mode << " (use min|max)\n";
+        if (worldRank == 0)
+			std::cerr << "Unknown mode: " << mode << " (use min|max)\n";
         MPI_Finalize();
         return 3;
     }

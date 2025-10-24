@@ -31,7 +31,8 @@ int main(int argc, char** argv) {
     unsigned int seed = (argc >= 3) ? static_cast<unsigned int>(std::stoul(argv[2])) : 123456u;
 
     if (problemSize <= 0) {
-        if (processRank == 0) std::cerr << "problemSize must be > 0\n";
+        if (processRank == 0)
+			std::cerr << "problemSize must be > 0\n";
         MPI_Finalize();
         return 2;
     }
