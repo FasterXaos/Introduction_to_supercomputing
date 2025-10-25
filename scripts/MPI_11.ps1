@@ -36,7 +36,7 @@ function Get-GridDims([int]$procCount) {
     return ,1,$procCount
 }
 
-$processList = @(1, 2, 4, 6, 8, 9, 16, 32, 64)
+$processList = @(4, 6, 8, 9, 16, 32, 64)
 $numIterationsList = @(200, 500)
 $numRuns = 3
 

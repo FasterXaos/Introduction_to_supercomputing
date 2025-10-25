@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iomanip>
+#include <sstream>
 
 // Usage:
 //   MPI_12 <numIterations> [gridRows gridCols]
@@ -14,7 +15,8 @@ static double computeAverage(double value) {
 }
 
 static void printLineOnRoot(int worldRank, const std::string& line) {
-    if (worldRank == 0) std::cout << line << std::endl;
+    if (worldRank == 0)
+        std::cout << line << std::endl;
 }
 
 static std::pair<int, int> chooseGridDims(int worldSize, int requestedRows, int requestedCols) {
@@ -40,50 +42,54 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &worldRank);
 
     int numIterations = 200;
-    int requestedRows = 0, requestedCols = 0;
-    if (argc >= 2) numIterations = std::max(1, std::atoi(argv[1]));
+    int requestedRows = 0;
+    int requestedCols = 0;
+    if (argc >= 2)
+        numIterations = std::max(1, std::atoi(argv[1]));
     if (argc >= 4) {
         requestedRows = std::max(1, std::atoi(argv[2]));
         requestedCols = std::max(1, std::atoi(argv[3]));
     }
 
-    auto gridDims = chooseGridDims(worldSize, requestedRows, requestedCols);
-    int gridRows = gridDims.first;
-    int gridCols = gridDims.second;
-
-    // 1) Cartesian (non-periodic)
-    // 2) Torus (periodic both dims)
-    // 3) Graph (custom adjacency)
-    // 4) Star (center connected to all)
+    const auto gridDims = chooseGridDims(worldSize, requestedRows, requestedCols);
+    const int gridRows = gridDims.first;
+    const int gridCols = gridDims.second;
 
     auto measureAllreduceAvg = [&](MPI_Comm comm, int iterations, double& outFinalGlobal) -> double {
         if (comm == MPI_COMM_NULL) {
             outFinalGlobal = 0.0;
             return -1.0;
         }
+
         double localValue = static_cast<double>(worldRank + 1);
-        
+
         MPI_Barrier(comm);
-        double t0 = MPI_Wtime();
+        const double t0 = MPI_Wtime();
+
         double globalValue = 0.0;
         for (int it = 0; it < iterations; ++it) {
             double iterValue = localValue + 1e-7 * it;
             MPI_Allreduce(&iterValue, &globalValue, 1, MPI_DOUBLE, MPI_SUM, comm);
         }
-        double t1 = MPI_Wtime();
-        double localElapsed = t1 - t0;
+
+        const double t1 = MPI_Wtime();
+        const double localElapsed = t1 - t0;
+
         double maxElapsed = 0.0;
         MPI_Reduce(&localElapsed, &maxElapsed, 1, MPI_DOUBLE, MPI_MAX, 0, comm);
-        double reducedFinal = globalValue;
+
+        const double reducedFinal = globalValue;
         double finalGlobalOnWorldRoot = 0.0;
         MPI_Reduce(&reducedFinal, &finalGlobalOnWorldRoot, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+
         outFinalGlobal = finalGlobalOnWorldRoot;
+
         if (maxElapsed <= 0.0)
             return 0.0;
         return maxElapsed / static_cast<double>(iterations);
         };
 
-    // --- 1) Cartesian ---
+    // --- 1) Cartesian (non-periodic) ---
     MPI_Comm cartComm = MPI_COMM_NULL;
     {
         int dims[2] = { gridRows, gridCols };
@@ -97,16 +103,20 @@ int main(int argc, char** argv) {
         MPI_Comm_rank(cartComm, &cartRank);
         int coords[2] = { 0, 0 };
         MPI_Cart_coords(cartComm, cartRank, 2, coords);
-        int left = MPI_PROC_NULL, right = MPI_PROC_NULL, up = MPI_PROC_NULL, down = MPI_PROC_NULL;
+
+        int left = MPI_PROC_NULL, right = MPI_PROC_NULL;
+        int up = MPI_PROC_NULL, down = MPI_PROC_NULL;
         MPI_Cart_shift(cartComm, 1, 1, &left, &right);
         MPI_Cart_shift(cartComm, 0, 1, &up, &down);
-        std::cout << "CART,worldRank=" << worldRank << ",cartRank=" << cartRank
+
+        std::ostringstream oss;
+        oss << "CART,worldRank=" << worldRank << ",cartRank=" << cartRank
             << ",coords=" << coords[0] << "x" << coords[1]
-            << ",neighbors(left,right,up,down)=" << left << "," << right << "," << up << "," << down << std::endl;
+            << ",neighbors(left,right,up,down)=" << left << "," << right << "," << up << "," << down;
+        std::cout << oss.str() << std::endl;
     }
     else {
-        if (worldRank == 0)
-            std::cout << "CART,creation_failed" << std::endl;
+        if (worldRank == 0) std::cout << "CART,creation_failed" << std::endl;
     }
 
     double finalGlobal = 0.0;
@@ -133,14 +143,21 @@ int main(int argc, char** argv) {
     }
 
     if (torusComm != MPI_COMM_NULL) {
-        int torusRank; MPI_Comm_rank(torusComm, &torusRank);
-        int coords[2]; MPI_Cart_coords(torusComm, torusRank, 2, coords);
-        int left = MPI_PROC_NULL, right = MPI_PROC_NULL, up = MPI_PROC_NULL, down = MPI_PROC_NULL;
+        int torusRank = -1;
+        MPI_Comm_rank(torusComm, &torusRank);
+        int coords[2] = { 0, 0 };
+        MPI_Cart_coords(torusComm, torusRank, 2, coords);
+
+        int left = MPI_PROC_NULL, right = MPI_PROC_NULL;
+        int up = MPI_PROC_NULL, down = MPI_PROC_NULL;
         MPI_Cart_shift(torusComm, 1, 1, &left, &right);
         MPI_Cart_shift(torusComm, 0, 1, &up, &down);
-        std::cout << "TORUS,worldRank=" << worldRank << ",torusRank=" << torusRank
+
+        std::ostringstream oss;
+        oss << "TORUS,worldRank=" << worldRank << ",torusRank=" << torusRank
             << ",coords=" << coords[0] << "x" << coords[1]
-            << ",neighbors(left,right,up,down)=" << left << "," << right << "," << up << "," << down << std::endl;
+            << ",neighbors(left,right,up,down)=" << left << "," << right << "," << up << "," << down;
+        std::cout << oss.str() << std::endl;
     }
     else {
         if (worldRank == 0)
@@ -165,44 +182,50 @@ int main(int argc, char** argv) {
     std::vector<int> index;
     std::vector<int> edges;
     {
-        index.resize(worldSize);
+        index.resize(static_cast<size_t>(worldSize));
         edges.clear();
+        edges.reserve(static_cast<size_t>(worldSize) * 4u);
+
         for (int r = 0; r < worldSize; ++r) {
+            // build up to 4 neighbors: +/-1, +/-2 (unique)
             std::vector<int> neighbors;
             int n1 = (r - 1 + worldSize) % worldSize;
             int n2 = (r + 1) % worldSize;
             int n3 = (r - 2 + worldSize) % worldSize;
             int n4 = (r + 2) % worldSize;
-            
+
             neighbors.push_back(n1);
-            if (n2 != n1)
-                neighbors.push_back(n2);
-            if (n3 != n1 && n3 != n2)
-                neighbors.push_back(n3);
-            if (n4 != n1 && n4 != n2 && n4 != n3)
-                neighbors.push_back(n4);
-            for (int nb : neighbors) {
-                edges.push_back(nb);
-            }
+            if (n2 != n1) neighbors.push_back(n2);
+            if (n3 != n1 && n3 != n2) neighbors.push_back(n3);
+            if (n4 != n1 && n4 != n2 && n4 != n3) neighbors.push_back(n4);
+
+            for (int nb : neighbors) edges.push_back(nb);
             index[r] = static_cast<int>(edges.size());
         }
-        MPI_Graph_create(MPI_COMM_WORLD, worldSize, index.data(), edges.data(), /*reorder=*/0, &graphComm);
+
+        MPI_Graph_create(MPI_COMM_WORLD, worldSize, index.data(), edges.data(), 0, &graphComm);
     }
 
     if (graphComm != MPI_COMM_NULL) {
-        int graphRank; MPI_Comm_rank(graphComm, &graphRank);
+        int graphRank = -1;
+        MPI_Comm_rank(graphComm, &graphRank);
         int neighborCount = 0;
         MPI_Graph_neighbors_count(graphComm, graphRank, &neighborCount);
-        std::vector<int> neighborList(static_cast<size_t>(neighborCount));
-        MPI_Graph_neighbors(graphComm, graphRank, neighborCount, neighborList.data());
-        std::cout << "GRAPH,worldRank=" << worldRank << ",graphRank=" << graphRank
+
+        std::vector<int> neighborList(static_cast<size_t>(std::max(0, neighborCount)));
+        if (neighborCount > 0) {
+            MPI_Graph_neighbors(graphComm, graphRank, neighborCount, neighborList.data());
+        }
+
+        std::ostringstream oss;
+        oss << "GRAPH,worldRank=" << worldRank << ",graphRank=" << graphRank
             << ",neighborsCount=" << neighborCount << ",neighbors=";
         for (size_t i = 0; i < neighborList.size(); ++i) {
             if (i)
-                std::cout << ";";
-            std::cout << neighborList[i];
+                oss << ";";
+            oss << neighborList[i];
         }
-        std::cout << std::endl;
+        std::cout << oss.str() << std::endl;
     }
     else {
         if (worldRank == 0)
@@ -225,8 +248,10 @@ int main(int argc, char** argv) {
     // --- 4) Star topology (center = rank 0 connected to all others) ---
     MPI_Comm starComm = MPI_COMM_NULL;
     {
-        std::vector<int> starIndex(worldSize);
+        std::vector<int> starIndex(static_cast<size_t>(worldSize));
         std::vector<int> starEdges;
+        starEdges.reserve(static_cast<size_t>(worldSize) + 4u);
+
         for (int r = 0; r < worldSize; ++r) {
             if (r == 0) {
                 for (int nb = 1; nb < worldSize; ++nb) {
@@ -242,18 +267,25 @@ int main(int argc, char** argv) {
     }
 
     if (starComm != MPI_COMM_NULL) {
-        int starRank; MPI_Comm_rank(starComm, &starRank);
+        int starRank = -1;
+        MPI_Comm_rank(starComm, &starRank);
         int neighborCount = 0;
         MPI_Graph_neighbors_count(starComm, starRank, &neighborCount);
-        std::vector<int> neighborList(static_cast<size_t>(neighborCount));
-        MPI_Graph_neighbors(starComm, starRank, neighborCount, neighborList.data());
-        std::cout << "STAR,worldRank=" << worldRank << ",starRank=" << starRank
+
+        std::vector<int> neighborList(static_cast<size_t>(std::max(0, neighborCount)));
+        if (neighborCount > 0) {
+            MPI_Graph_neighbors(starComm, starRank, neighborCount, neighborList.data());
+        }
+
+        std::ostringstream oss;
+        oss << "STAR,worldRank=" << worldRank << ",starRank=" << starRank
             << ",neighborsCount=" << neighborCount << ",neighbors=";
         for (size_t i = 0; i < neighborList.size(); ++i) {
-            if (i) std::cout << ";";
-            std::cout << neighborList[i];
+            if (i)
+                oss << ";";
+            oss << neighborList[i];
         }
-        std::cout << std::endl;
+        std::cout << oss.str() << std::endl;
     }
     else {
         if (worldRank == 0)

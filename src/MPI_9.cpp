@@ -421,7 +421,7 @@ int main(int argc, char** argv) {
     if (worldRank == 0) {
         std::cout << "MPI_9," << opName << "," << messageSizeBytes << "," << worldSize << ","
             << std::fixed << std::setprecision(9) << customTime << ","
-            << std::fixed << std::setprecision(9) << mpiTime << "," << checksum << ",1,PROCS=" << worldSize << std::endl;
+            << std::fixed << std::setprecision(9) << mpiTime << "," << checksum << std::endl;
     }
 
     MPI_Finalize();

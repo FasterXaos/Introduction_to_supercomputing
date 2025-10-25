@@ -181,7 +181,7 @@ int main(int argc, char** argv) {
     MPI_Reduce(&localSum, &globalSum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (worldRank == 0) {
-        std::cout << method << "," << matrixRows << "," << matrixCols << "," << blockRows << "," << blockCols << "," << worldSize << ","
+        std::cout << "MPI_9," << method << "," << matrixRows << "," << matrixCols << "," << blockRows << "," << blockCols << "," << worldSize << ","
             << std::fixed << std::setprecision(6) << elapsedSeconds << "," << std::setprecision(12) << globalSum << std::endl;
     }
 

@@ -13,7 +13,7 @@ exeName="MPI_8"
 jobScript="$scriptDir/MPI_8_job.sh"
 csvPath="$resultsDir/MPI_8.csv"
 
-messageSizeList=(1 16 1024 16384 65536 262144 1048576)
+messageSizeList=(1 16 1024 16384 65536 262144 1048576 4194304)
 modes=("separate" "sendrecv" "isend_irecv")
 numRuns=5
 processCount=2
