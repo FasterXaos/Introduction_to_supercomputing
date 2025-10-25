@@ -6,6 +6,8 @@
 #include <cmath>
 #include <random>
 #include <iomanip>
+#include <algorithm>
+#include <cstdint>
 
 // Usage:
 //   MPI_7 <messageSizeBytes> <numIterations> <computeUnits> <mode> [seed]
@@ -50,35 +52,48 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    long long messageSizeBytes = std::stoll(argv[1]);
-    int numIterations = std::stoi(argv[2]);
-    int computeUnits = std::stoi(argv[3]);
-    std::string mode = argv[4];
-    unsigned int seed = (argc >= 6) ? static_cast<unsigned int>(std::stoul(argv[5])) : 123456u;
+    const long long messageSizeSigned = std::stoll(argv[1]);
+    const std::size_t messageSize = static_cast<std::size_t>(std::max<long long>(0LL, messageSizeSigned));
+    const int numIterations = std::stoi(argv[2]);
+    const int computeUnits = std::stoi(argv[3]);
+    const std::string mode = argv[4];
+    const unsigned int seed = (argc >= 6) ? static_cast<unsigned int>(std::stoul(argv[5])) : 123456u;
 
-    if (messageSizeBytes < 0 || numIterations <= 0 || computeUnits < 0) {
-        if (worldRank == 0) std::cerr << "Invalid numeric arguments\n";
+    if (messageSize == 0 && mode != "compute_only") {
+        // allow zero-size when user wants compute_only, otherwise warn but proceed
+    }
+    if (numIterations <= 0 || computeUnits < 0) {
+        if (worldRank == 0)
+            std::cerr << "Invalid numeric arguments\n";
         MPI_Finalize();
         return 2;
     }
 
-    std::vector<char> sendBuffer(static_cast<size_t>(messageSizeBytes), 0);
-    std::vector<char> recvBuffer(static_cast<size_t>(messageSizeBytes), 0);
+    std::vector<char> sendBuffer(messageSize, 0);
+    std::vector<char> recvBuffer(messageSize, 0);
+
+    const int bufferCountInt = (messageSize > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        ? std::numeric_limits<int>::max()
+        : static_cast<int>(messageSize);
 
     std::mt19937_64 rng(static_cast<unsigned long long>(seed + static_cast<unsigned int>(worldRank) * 13u));
     std::uniform_int_distribution<int> dist(0, 255);
-    for (size_t i = 0; i < sendBuffer.size(); ++i) sendBuffer[i] = static_cast<char>(dist(rng));
+    for (size_t i = 0; i < sendBuffer.size(); ++i) {
+        sendBuffer[i] = static_cast<char>(dist(rng));
+    }
 
-    int destRank = (worldRank + 1) % worldSize;
-    int srcRank = (worldRank - 1 + worldSize) % worldSize;
+    const int destRank = (worldRank + 1) % worldSize;
+    const int srcRank = (worldRank - 1 + worldSize) % worldSize;
     const int tagA = 100;
 
-    // warm-up
+    // Warm-up
     MPI_Barrier(MPI_COMM_WORLD);
     for (int w = 0; w < 2; ++w) {
-        MPI_Sendrecv(sendBuffer.data(), static_cast<int>(sendBuffer.size()), MPI_BYTE, destRank, tagA,
-            recvBuffer.data(), static_cast<int>(recvBuffer.size()), MPI_BYTE, srcRank, tagA,
-            MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        if (mode != "compute_only" && worldSize > 1) {
+            MPI_Sendrecv(sendBuffer.data(), bufferCountInt, MPI_BYTE, destRank, tagA,
+                recvBuffer.data(), bufferCountInt, MPI_BYTE, srcRank, tagA,
+                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
     }
     MPI_Barrier(MPI_COMM_WORLD);
 
@@ -86,61 +101,63 @@ int main(int argc, char** argv) {
     double totalCommTime = 0.0;    // measured communication time (blocking sendrecv or Wait)
     double totalComputeTime = 0.0; // measured compute time
 
-    double globalStart = MPI_Wtime();
+    const double globalStart = MPI_Wtime();
 
     if (mode == "blocking") {
         for (int iter = 0; iter < numIterations; ++iter) {
-            double compStart = MPI_Wtime();
-            if (computeUnits > 0)
-                doComputeWork(computeUnits);
-            double compEnd = MPI_Wtime();
+            const double compStart = MPI_Wtime();
+            if (computeUnits > 0) doComputeWork(computeUnits);
+            const double compEnd = MPI_Wtime();
             totalComputeTime += (compEnd - compStart);
 
-            double commStart = MPI_Wtime();
-            MPI_Sendrecv(sendBuffer.data(), static_cast<int>(sendBuffer.size()), MPI_BYTE, destRank, tagA,
-                recvBuffer.data(), static_cast<int>(recvBuffer.size()), MPI_BYTE, srcRank, tagA,
-                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            double commEnd = MPI_Wtime();
+            const double commStart = MPI_Wtime();
+            if (worldSize > 1)
+                MPI_Sendrecv(sendBuffer.data(), bufferCountInt, MPI_BYTE, destRank, tagA,
+                    recvBuffer.data(), bufferCountInt, MPI_BYTE, srcRank, tagA,
+                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            const double commEnd = MPI_Wtime();
             totalCommTime += (commEnd - commStart);
         }
     }
     else if (mode == "nonblocking") {
         for (int iter = 0; iter < numIterations; ++iter) {
-            MPI_Request reqs[2];
+            MPI_Request reqs[2] = { MPI_REQUEST_NULL, MPI_REQUEST_NULL };
             MPI_Status stats[2];
 
-            int recvReqErr = MPI_Irecv(recvBuffer.data(), static_cast<int>(recvBuffer.size()), MPI_BYTE, srcRank, tagA, MPI_COMM_WORLD, &reqs[0]);
-            int sendReqErr = MPI_Isend(sendBuffer.data(), static_cast<int>(sendBuffer.size()), MPI_BYTE, destRank, tagA, MPI_COMM_WORLD, &reqs[1]);
-            (void)recvReqErr; (void)sendReqErr;
+            if (worldSize > 1) {
+                MPI_Irecv(recvBuffer.data(), bufferCountInt, MPI_BYTE, srcRank, tagA, MPI_COMM_WORLD, &reqs[0]);
+                MPI_Isend(sendBuffer.data(), bufferCountInt, MPI_BYTE, destRank, tagA, MPI_COMM_WORLD, &reqs[1]);
+            }
 
-            double compStart = MPI_Wtime();
-            if (computeUnits > 0)
-                doComputeWork(computeUnits);
-            double compEnd = MPI_Wtime();
+            const double compStart = MPI_Wtime();
+            if (computeUnits > 0) doComputeWork(computeUnits);
+            const double compEnd = MPI_Wtime();
             totalComputeTime += (compEnd - compStart);
 
-            double waitStart = MPI_Wtime();
-            MPI_Waitall(2, reqs, stats);
-            double waitEnd = MPI_Wtime();
-            totalCommTime += (waitEnd - waitStart);
+            if (worldSize > 1) {
+                const double waitStart = MPI_Wtime();
+                MPI_Waitall(2, reqs, stats);
+                const double waitEnd = MPI_Wtime();
+                totalCommTime += (waitEnd - waitStart);
+            }
         }
     }
     else if (mode == "comm_only") {
         for (int iter = 0; iter < numIterations; ++iter) {
-            double commStart = MPI_Wtime();
-            MPI_Sendrecv(sendBuffer.data(), static_cast<int>(sendBuffer.size()), MPI_BYTE, destRank, tagA,
-                recvBuffer.data(), static_cast<int>(recvBuffer.size()), MPI_BYTE, srcRank, tagA,
-                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            double commEnd = MPI_Wtime();
+            const double commStart = MPI_Wtime();
+            if (worldSize > 1)
+                MPI_Sendrecv(sendBuffer.data(), bufferCountInt, MPI_BYTE, destRank, tagA,
+                    recvBuffer.data(), bufferCountInt, MPI_BYTE, srcRank, tagA,
+                    MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            const double commEnd = MPI_Wtime();
             totalCommTime += (commEnd - commStart);
         }
     }
     else if (mode == "compute_only") {
         for (int iter = 0; iter < numIterations; ++iter) {
-            double compStart = MPI_Wtime();
-            if (computeUnits > 0)
-                doComputeWork(computeUnits);
-            double compEnd = MPI_Wtime();
+            const double compStart = MPI_Wtime();
+            if (computeUnits > 0) doComputeWork(computeUnits);
+            const double compEnd = MPI_Wtime();
             totalComputeTime += (compEnd - compStart);
         }
     }
@@ -150,7 +167,7 @@ int main(int argc, char** argv) {
         return 3;
     }
 
-    double globalEnd = MPI_Wtime();
+    const double globalEnd = MPI_Wtime();
     totalWallTime = globalEnd - globalStart;
 
     double sumWallTime = 0.0, sumCommTime = 0.0, sumComputeTime = 0.0;
@@ -159,11 +176,11 @@ int main(int argc, char** argv) {
     MPI_Reduce(&totalComputeTime, &sumComputeTime, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
 
     if (worldRank == 0) {
-        double avgWall = sumWallTime / static_cast<double>(worldSize);
-        double avgComm = sumCommTime / static_cast<double>(worldSize);
-        double avgCompute = sumComputeTime / static_cast<double>(worldSize);
+        const double avgWall = sumWallTime / static_cast<double>(worldSize);
+        const double avgComm = sumCommTime / static_cast<double>(worldSize);
+        const double avgCompute = sumComputeTime / static_cast<double>(worldSize);
 
-        std::cout << "MPI_7," << messageSizeBytes << "," << worldSize << "," << mode << "," << numIterations << "," << computeUnits << ","
+        std::cout << "MPI_7," << static_cast<unsigned long long>(messageSize) << "," << worldSize << "," << mode << "," << numIterations << "," << computeUnits << ","
             << std::fixed << std::setprecision(6) << avgWall << "," << avgComm << "," << avgCompute << std::endl;
     }
 

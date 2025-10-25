@@ -7,6 +7,7 @@
 #include <iomanip>
 #include <cmath>
 #include <numeric>
+#include <cstddef>
 
 // Two matrix-multiplication algorithms with MPI:
 // blockRow : simple row-block distribution (scatter rows of A, broadcast B)
@@ -16,16 +17,14 @@
 //   MPI_4 <matrixSize> <mode> [seed]
 //   modes: blockRow | cannon
 
-using std::size_t;
-
 static void multiplyAddBlock(const double* blockA, const double* blockB, double* blockC, int blockSize) {
     for (int i = 0; i < blockSize; ++i) {
+        const int rowOffsetI = i * blockSize;
         for (int k = 0; k < blockSize; ++k) {
-            double aVal = blockA[static_cast<size_t>(i) * blockSize + k];
-            const double* bRow = blockB + static_cast<size_t>(k) * blockSize;
-            double* cRow = blockC + static_cast<size_t>(i) * blockSize;
+            const double aVal = blockA[rowOffsetI + k];
+            const int bRowOffset = k * blockSize;
             for (int j = 0; j < blockSize; ++j) {
-                cRow[j] += aVal * bRow[j];
+                blockC[rowOffsetI + j] += aVal * blockB[bRowOffset + j];
             }
         }
     }
@@ -47,12 +46,13 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    int matrixSize = std::stoi(argv[1]);
+    const std::size_t matrixSize = static_cast<std::size_t>(std::stoull(argv[1]));
     std::string modeRequested = argv[2];
-    unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 123456u;
+    const unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 123456u;
 
-    if (matrixSize <= 0) {
-        if (worldRank == 0) std::cerr << "matrixSize must be > 0\n";
+    if (matrixSize == 0) {
+        if (worldRank == 0)
+            std::cerr << "matrixSize must be > 0\n";
         MPI_Finalize();
         return 2;
     }
@@ -60,11 +60,11 @@ int main(int argc, char** argv) {
     std::string mode = modeRequested;
     int q = 0;
     if (modeRequested == "cannon") {
-        double sqrtP = std::sqrt(static_cast<double>(worldSize));
+        const double sqrtP = std::sqrt(static_cast<double>(worldSize));
         q = static_cast<int>(std::floor(sqrtP + 0.5));
-        if (q * q != worldSize || (matrixSize % q) != 0) {
+        if (q * q != worldSize || (matrixSize % static_cast<std::size_t>(q)) != 0) {
             if (worldRank == 0) {
-                std::cerr << "Cannon conditions not met (need numProcesses to be perfect square and matrixSize % sqrtP == 0). Falling back to blockRow.\n";
+                std::cerr << "Cannon conditions not met (need numProcesses to be a perfect square and matrixSize % sqrtP == 0). Falling back to blockRow.\n";
             }
             mode = "blockRow";
         }
@@ -73,43 +73,43 @@ int main(int argc, char** argv) {
     std::vector<double> fullA;
     std::vector<double> fullB;
     if (worldRank == 0) {
-        fullA.assign(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize), 0.0);
-        fullB.assign(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize), 0.0);
+        fullA.assign(matrixSize * matrixSize, 0.0);
+        fullB.assign(matrixSize * matrixSize, 0.0);
         std::mt19937_64 generator(static_cast<unsigned long long>(seed));
         std::uniform_real_distribution<double> distribution(0.0, 1.0);
-
-        for (int i = 0; i < matrixSize; ++i) {
-            for (int j = 0; j < matrixSize; ++j) {
-                fullA[static_cast<size_t>(i) * matrixSize + j] = distribution(generator);
-                fullB[static_cast<size_t>(i) * matrixSize + j] = distribution(generator);
+        for (std::size_t i = 0; i < matrixSize; ++i) {
+            const std::size_t rowOff = i * matrixSize;
+            for (std::size_t j = 0; j < matrixSize; ++j) {
+                fullA[rowOff + j] = distribution(generator);
+                fullB[rowOff + j] = distribution(generator);
             }
         }
     }
 
     MPI_Barrier(MPI_COMM_WORLD);
-    double timeStart = MPI_Wtime();
+    const double timeStart = MPI_Wtime();
 
     std::vector<double> localC;
     double elapsedSeconds = 0.0;
 
     if (mode == "blockRow") {
-        int baseRows = matrixSize / worldSize;
-        int remainder = matrixSize % worldSize;
-        int localRows = baseRows + (worldRank < remainder ? 1 : 0);
+        const std::size_t baseRows = matrixSize / static_cast<std::size_t>(worldSize);
+        const int remainder = static_cast<int>(matrixSize % static_cast<std::size_t>(worldSize));
+        const int localRows = static_cast<int>(baseRows + (worldRank < remainder ? 1u : 0u));
 
         std::vector<int> sendCounts(worldSize), displacements(worldSize);
         if (worldRank == 0) {
-            int offset = 0;
+            std::size_t offsetRows = 0;
             for (int p = 0; p < worldSize; ++p) {
-                int rowsForP = baseRows + (p < remainder ? 1 : 0);
-                sendCounts[p] = rowsForP * matrixSize;
-                displacements[p] = offset * matrixSize;
-                offset += rowsForP;
+                std::size_t rowsForP = baseRows + (p < remainder ? 1u : 0u);
+                sendCounts[p] = static_cast<int>(rowsForP * matrixSize);
+                displacements[p] = static_cast<int>(offsetRows * matrixSize);
+                offsetRows += rowsForP;
             }
         }
 
-        std::vector<double> localA(static_cast<size_t>(localRows) * static_cast<size_t>(matrixSize), 0.0);
-        std::vector<double> localB(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize), 0.0);
+        std::vector<double> localA(static_cast<std::size_t>(localRows) * matrixSize);
+        std::vector<double> localB(matrixSize * matrixSize);
 
         MPI_Scatterv(
             (worldRank == 0 ? fullA.data() : nullptr),
@@ -117,43 +117,42 @@ int main(int argc, char** argv) {
             (worldRank == 0 ? displacements.data() : nullptr),
             MPI_DOUBLE,
             (localRows > 0 ? localA.data() : nullptr),
-            localRows * matrixSize,
+            localRows * static_cast<int>(matrixSize),
             MPI_DOUBLE,
             0,
             MPI_COMM_WORLD
         );
 
-        MPI_Bcast((worldRank == 0 ? fullB.data() : localB.data()), matrixSize * matrixSize, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Bcast((worldRank == 0 ? fullB.data() : localB.data()), static_cast<int>(matrixSize * matrixSize), MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        const double* bData = (worldRank == 0 ? fullB.data() : localB.data());
 
-        double* bData = (worldRank == 0 ? fullB.data() : localB.data());
-        localC.assign(static_cast<size_t>(localRows) * static_cast<size_t>(matrixSize), 0.0);
-
+        localC.assign(static_cast<std::size_t>(localRows) * matrixSize, 0.0);
         for (int i = 0; i < localRows; ++i) {
-            size_t aRowOffset = static_cast<size_t>(i) * matrixSize;
-            size_t cRowOffset = static_cast<size_t>(i) * matrixSize;
-            for (int k = 0; k < matrixSize; ++k) {
-                double aVal = localA[aRowOffset + static_cast<size_t>(k)];
-                size_t bRowOffset = static_cast<size_t>(k) * matrixSize;
-                for (int j = 0; j < matrixSize; ++j) {
-                    localC[cRowOffset + static_cast<size_t>(j)] += aVal * bData[bRowOffset + static_cast<size_t>(j)];
+            const std::size_t aRowOff = static_cast<std::size_t>(i) * matrixSize;
+            const std::size_t cRowOff = static_cast<std::size_t>(i) * matrixSize;
+            for (std::size_t k = 0; k < matrixSize; ++k) {
+                const double aVal = localA[aRowOff + k];
+                const std::size_t bRowOff = k * matrixSize;
+                for (std::size_t j = 0; j < matrixSize; ++j) {
+                    localC[cRowOff + j] += aVal * bData[bRowOff + j];
                 }
             }
         }
 
         std::vector<int> recvCounts(worldSize), recvDispls(worldSize);
         if (worldRank == 0) {
-            for (int p = 0, offsetRows = 0; p < worldSize; ++p) {
-                int rowsForP = baseRows + (p < remainder ? 1 : 0);
-                recvCounts[p] = rowsForP * matrixSize;
-                recvDispls[p] = offsetRows * matrixSize;
+            std::size_t offsetRows = 0;
+            for (int p = 0; p < worldSize; ++p) {
+                std::size_t rowsForP = baseRows + (p < remainder ? 1u : 0u);
+                recvCounts[p] = static_cast<int>(rowsForP * matrixSize);
+                recvDispls[p] = static_cast<int>(offsetRows * matrixSize);
                 offsetRows += rowsForP;
             }
         }
 
         std::vector<double> fullC;
-        if (worldRank == 0) {
-            fullC.assign(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize), 0.0);
-        }
+        if (worldRank == 0)
+            fullC.assign(matrixSize * matrixSize, 0.0);
 
         MPI_Gatherv(
             (localC.empty() ? nullptr : localC.data()),
@@ -180,44 +179,43 @@ int main(int argc, char** argv) {
     }
     else if (mode == "cannon") {
         q = static_cast<int>(std::floor(std::sqrt(static_cast<double>(worldSize)) + 0.5));
-        int blockSize = matrixSize / q;
+        const int blockSizeInt = static_cast<int>(matrixSize / static_cast<std::size_t>(q));
+        const std::size_t blockSize = static_cast<std::size_t>(blockSizeInt);
 
-        int dims[2] = {q, q};
-        int periods[2] = {1, 1};
+        int dims[2] = { q, q };
+        int periods[2] = { 1, 1 };
         MPI_Comm cartComm;
         MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 1, &cartComm);
 
         int myCoords[2];
         MPI_Cart_coords(cartComm, worldRank, 2, myCoords);
-        int myRow = myCoords[0], myCol = myCoords[1];
+        const int myRow = myCoords[0], myCol = myCoords[1];
 
-        std::vector<double> localAblock(static_cast<size_t>(blockSize) * static_cast<size_t>(blockSize), 0.0);
-        std::vector<double> localBblock(static_cast<size_t>(blockSize) * static_cast<size_t>(blockSize), 0.0);
-        localC.assign(static_cast<size_t>(blockSize) * static_cast<size_t>(blockSize), 0.0);
+        std::vector<double> localAblock(blockSize * blockSize);
+        std::vector<double> localBblock(blockSize * blockSize);
+        localC.assign(blockSize * blockSize, 0.0);
 
         if (worldRank == 0) {
             for (int p = 0; p < worldSize; ++p) {
                 int coords[2];
                 MPI_Cart_coords(cartComm, p, 2, coords);
-                int prow = coords[0], pcol = coords[1];
-                
-                int rowStart = prow * blockSize;
-                int colStart = pcol * blockSize;
+                const int prow = coords[0], pcol = coords[1];
+                const std::size_t rowStart = static_cast<std::size_t>(prow) * blockSize;
+                const std::size_t colStart = static_cast<std::size_t>(pcol) * blockSize;
 
-                std::vector<double> packA(static_cast<size_t>(blockSize) * static_cast<size_t>(blockSize));
-                std::vector<double> packB(static_cast<size_t>(blockSize) * static_cast<size_t>(blockSize));
-                for (int bi = 0; bi < blockSize; ++bi) {
-                    int aRow = rowStart + bi;
-                    size_t srcOffsetA = static_cast<size_t>(aRow) * matrixSize + colStart;
-                    for (int bj = 0; bj < blockSize; ++bj) {
-                        packA[static_cast<size_t>(bi) * blockSize + bj] = fullA[srcOffsetA + static_cast<size_t>(bj)];
+                std::vector<double> packA(blockSize * blockSize);
+                std::vector<double> packB(blockSize * blockSize);
+
+                for (int bi = 0; bi < blockSizeInt; ++bi) {
+                    const std::size_t srcOffA = (rowStart + static_cast<std::size_t>(bi)) * matrixSize + colStart;
+                    for (int bj = 0; bj < blockSizeInt; ++bj) {
+                        packA[static_cast<std::size_t>(bi) * blockSize + static_cast<std::size_t>(bj)] = fullA[srcOffA + static_cast<std::size_t>(bj)];
                     }
                 }
-                for (int bi = 0; bi < blockSize; ++bi) {
-                    int bRow = rowStart + bi;
-                    size_t srcOffsetB = static_cast<size_t>(bRow) * matrixSize + colStart;
-                    for (int bj = 0; bj < blockSize; ++bj) {
-                        packB[static_cast<size_t>(bi) * blockSize + bj] = fullB[srcOffsetB + static_cast<size_t>(bj)];
+                for (int bi = 0; bi < blockSizeInt; ++bi) {
+                    const std::size_t srcOffB = (rowStart + static_cast<std::size_t>(bi)) * matrixSize + colStart;
+                    for (int bj = 0; bj < blockSizeInt; ++bj) {
+                        packB[static_cast<std::size_t>(bi) * blockSize + static_cast<std::size_t>(bj)] = fullB[srcOffB + static_cast<std::size_t>(bj)];
                     }
                 }
 
@@ -226,69 +224,66 @@ int main(int argc, char** argv) {
                     localBblock = std::move(packB);
                 }
                 else {
-                    MPI_Send(packA.data(), blockSize * blockSize, MPI_DOUBLE, p, 17, cartComm);
-                    MPI_Send(packB.data(), blockSize * blockSize, MPI_DOUBLE, p, 19, cartComm);
+                    MPI_Send(packA.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, p, 17, cartComm);
+                    MPI_Send(packB.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, p, 19, cartComm);
                 }
             }
         }
         else {
-            MPI_Recv(localAblock.data(), blockSize * blockSize, MPI_DOUBLE, 0, 17, cartComm, MPI_STATUS_IGNORE);
-            MPI_Recv(localBblock.data(), blockSize * blockSize, MPI_DOUBLE, 0, 19, cartComm, MPI_STATUS_IGNORE);
+            MPI_Recv(localAblock.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, 0, 17, cartComm, MPI_STATUS_IGNORE);
+            MPI_Recv(localBblock.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, 0, 19, cartComm, MPI_STATUS_IGNORE);
         }
 
-        int leftRank, rightRank;
-        MPI_Cart_shift(cartComm, 1, -myRow, &rightRank, &leftRank);
-        
-        for (int step = 0; step < myRow; ++step) {
+        for (int s = 0; s < myRow; ++s) {
             int srcRank, dstRank;
             MPI_Cart_shift(cartComm, 1, 1, &srcRank, &dstRank);
-            MPI_Sendrecv_replace(localAblock.data(), blockSize * blockSize, MPI_DOUBLE,
-                dstRank, 31, srcRank, 31, cartComm, MPI_STATUS_IGNORE);
+            MPI_Sendrecv_replace(localAblock.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, dstRank, 31, srcRank, 31, cartComm, MPI_STATUS_IGNORE);
         }
-
-        for (int step = 0; step < myCol; ++step) {
+        for (int s = 0; s < myCol; ++s) {
             int srcRank, dstRank;
             MPI_Cart_shift(cartComm, 0, 1, &srcRank, &dstRank);
-            MPI_Sendrecv_replace(localBblock.data(), blockSize * blockSize, MPI_DOUBLE,
-                dstRank, 33, srcRank, 33, cartComm, MPI_STATUS_IGNORE);
+            MPI_Sendrecv_replace(localBblock.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, dstRank, 33, srcRank, 33, cartComm, MPI_STATUS_IGNORE);
         }
 
         for (int iter = 0; iter < q; ++iter) {
-            multiplyAddBlock(localAblock.data(), localBblock.data(), localC.data(), blockSize);
+            multiplyAddBlock(localAblock.data(), localBblock.data(), localC.data(), blockSizeInt);
 
             int srcA, dstA;
             MPI_Cart_shift(cartComm, 1, -1, &srcA, &dstA);
-            MPI_Sendrecv_replace(localAblock.data(), blockSize * blockSize, MPI_DOUBLE, dstA, 41, srcA, 41, cartComm, MPI_STATUS_IGNORE);
+            MPI_Sendrecv_replace(localAblock.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, dstA, 41, srcA, 41, cartComm, MPI_STATUS_IGNORE);
 
             int srcB, dstB;
             MPI_Cart_shift(cartComm, 0, -1, &srcB, &dstB);
-            MPI_Sendrecv_replace(localBblock.data(), blockSize * blockSize, MPI_DOUBLE, dstB, 43, srcB, 43, cartComm, MPI_STATUS_IGNORE);
+            MPI_Sendrecv_replace(localBblock.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, dstB, 43, srcB, 43, cartComm, MPI_STATUS_IGNORE);
         }
 
         if (worldRank == 0) {
-            std::vector<double> fullC(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize), 0.0);
-            
-            int rowStart = 0;
-            int colStart = 0;
-            for (int bi = 0; bi < blockSize; ++bi) {
-                size_t dstOff = static_cast<size_t>(rowStart + bi) * matrixSize + colStart;
-                for (int bj = 0; bj < blockSize; ++bj) {
-                    fullC[dstOff + static_cast<size_t>(bj)] = localC[static_cast<size_t>(bi) * blockSize + bj];
+            std::vector<double> fullC(matrixSize * matrixSize, 0.0);
+
+            {
+                const int prow = 0, pcol = 0;
+                const std::size_t destRowStart = static_cast<std::size_t>(prow) * blockSize;
+                const std::size_t destColStart = static_cast<std::size_t>(pcol) * blockSize;
+                for (int bi = 0; bi < blockSizeInt; ++bi) {
+                    const std::size_t dstOff = (destRowStart + static_cast<std::size_t>(bi)) * matrixSize + destColStart;
+                    for (int bj = 0; bj < blockSizeInt; ++bj) {
+                        fullC[dstOff + static_cast<std::size_t>(bj)] = localC[static_cast<std::size_t>(bi) * blockSize + static_cast<std::size_t>(bj)];
+                    }
                 }
             }
 
             for (int p = 1; p < worldSize; ++p) {
                 int coords[2];
                 MPI_Cart_coords(cartComm, p, 2, coords);
-                int prow = coords[0], pcol = coords[1];
-                int destRowStart = prow * blockSize;
-                int destColStart = pcol * blockSize;
-                std::vector<double> recvBlock(static_cast<size_t>(blockSize) * static_cast<size_t>(blockSize));
-                MPI_Recv(recvBlock.data(), blockSize * blockSize, MPI_DOUBLE, p, 51, cartComm, MPI_STATUS_IGNORE);
-                for (int bi = 0; bi < blockSize; ++bi) {
-                    size_t dstOff = static_cast<size_t>(destRowStart + bi) * matrixSize + destColStart;
-                    for (int bj = 0; bj < blockSize; ++bj) {
-                        fullC[dstOff + static_cast<size_t>(bj)] = recvBlock[static_cast<size_t>(bi) * blockSize + bj];
+                const int prow = coords[0], pcol = coords[1];
+                const std::size_t destRowStart = static_cast<std::size_t>(prow) * blockSize;
+                const std::size_t destColStart = static_cast<std::size_t>(pcol) * blockSize;
+                std::vector<double> recvBlock(blockSize * blockSize);
+                MPI_Recv(recvBlock.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, p, 51, cartComm, MPI_STATUS_IGNORE);
+                for (int bi = 0; bi < blockSizeInt; ++bi) {
+                    const std::size_t dstOff = (destRowStart + static_cast<std::size_t>(bi)) * matrixSize + destColStart;
+                    for (int bj = 0; bj < blockSizeInt; ++bj) {
+                        fullC[dstOff + static_cast<std::size_t>(bj)] = recvBlock[static_cast<std::size_t>(bi) * blockSize + static_cast<std::size_t>(bj)];
                     }
                 }
             }
@@ -303,7 +298,7 @@ int main(int argc, char** argv) {
             std::cout << matrixSize << "," << worldSize << "," << "cannon" << "," << std::fixed << std::setprecision(6) << elapsedSeconds << "," << std::setprecision(12) << checksum << std::endl;
         }
         else {
-            MPI_Send(localC.data(), blockSize * blockSize, MPI_DOUBLE, 0, 51, cartComm);
+            MPI_Send(localC.data(), blockSizeInt * blockSizeInt, MPI_DOUBLE, 0, 51, cartComm);
             MPI_Barrier(MPI_COMM_WORLD);
         }
 

@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-#SBATCH --job-name=MPI_1
-
+#SBATCH --job-name=MPI_6
 set -euo pipefail
 
 : "${EXE_PATH:?EXE_PATH not set}"
-: "${VECTOR_SIZE:?VECTOR_SIZE not set}"
-: "${MODE:?MODE not set}"
+: "${MATRIX_SIZE:?MATRIX_SIZE not set}"
+: "${SEND_MODE:?SEND_MODE not set}"
 : "${RUN_INDEX:?RUN_INDEX not set}"
 : "${SEED:=123456}"
 : "${RESULTS_DIR:=$HOME/results}"
@@ -13,12 +12,12 @@ set -euo pipefail
 module add openmpi >/dev/null 2>&1 || true
 
 mkdir -p "$RESULTS_DIR"
-csvPath="$RESULTS_DIR/MPI_1.csv"
+csvPath="$RESULTS_DIR/MPI_6.csv"
 
 tmpDir="${TMPDIR:-/tmp}"
-tmpOutputFile="$tmpDir/mpi_output_${SLURM_JOB_ID:-$$}.txt"
+tmpOutputFile="$tmpDir/mpi6_output_${SLURM_JOB_ID:-$$}.txt"
 
-srun -n "${SLURM_NTASKS:-1}" "$EXE_PATH" "$VECTOR_SIZE" "$MODE" "$SEED" > "$tmpOutputFile" 2>&1 || jobExit=$?
+srun -n "${SLURM_NTASKS:-1}" "$EXE_PATH" "$MATRIX_SIZE" "$SEND_MODE" "$SEED" > "$tmpOutputFile" 2>&1 || jobExit=$?
 jobExit=${jobExit:-0}
 
 if [[ "$jobExit" -ne 0 ]]; then
@@ -36,12 +35,12 @@ if [[ -z "$outputLine" ]]; then
 fi
 
 mpiEnv="SLURM_NTASKS=${SLURM_NTASKS:-1};JOBID=${SLURM_JOB_ID:-na}"
-csvLine="MPI_1,$outputLine,$RUN_INDEX,\"$mpiEnv\""
+csvLine="MPI_6,$outputLine,$RUN_INDEX,\"$mpiEnv\""
 
 exec 9>>"$csvPath"
 if command -v flock >/dev/null 2>&1; then
     flock 9
-    printf '%s\n' "$csvLine" >&9
+    printf '%s\n' "%s" "$csvLine" >&9
     flock -u 9
 else
     printf '%s\n' "$csvLine" >&9

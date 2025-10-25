@@ -1,3 +1,16 @@
+#include <mpi.h>
+#include <iostream>
+#include <vector>
+#include <random>
+#include <string>
+#include <iomanip>
+#include <algorithm>
+#include <cstring>
+#include <climits>
+#include <new>
+#include <cstddef>
+#include <cstdint>
+
 // Modes:
 //   collective  : MPI_Scatterv(A) + MPI_Bcast(B)
 //   manual_std  : MPI_Send / MPI_Irecv
@@ -9,17 +22,6 @@
 //   MPI_6 <matrixSize> <sendMode> [seed]
 // Example:
 //   mpiexec -n 4 ./MPI_6 512 manual_ssend 12345
-
-#include <mpi.h>
-#include <iostream>
-#include <vector>
-#include <random>
-#include <string>
-#include <iomanip>
-#include <algorithm>
-#include <cstring>
-#include <climits>
-#include <new>
 
 using std::size_t;
 
@@ -40,11 +42,12 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    int matrixSize = std::stoi(argv[1]);
-    std::string sendMode = argv[2];
-    unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 123456u;
+    const std::int64_t matrixSizeSigned = std::stoll(argv[1]);
+    const size_t matrixSize = static_cast<size_t>(matrixSizeSigned);
+    const std::string sendMode = argv[2];
+    const unsigned int seed = (argc >= 4) ? static_cast<unsigned int>(std::stoul(argv[3])) : 123456u;
 
-    if (matrixSize <= 0) {
+    if (matrixSize == 0) {
         if (worldRank == 0)
             std::cerr << "matrixSize must be > 0\n";
         MPI_Finalize();
@@ -54,28 +57,30 @@ int main(int argc, char** argv) {
     std::vector<double> fullA;
     std::vector<double> fullB;
     if (worldRank == 0) {
-        fullA.assign(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize), 0.0);
-        fullB.assign(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize), 0.0);
+        fullA.assign(matrixSize * matrixSize, 0.0);
+        fullB.assign(matrixSize * matrixSize, 0.0);
         std::mt19937_64 generator(static_cast<unsigned long long>(seed));
         std::uniform_real_distribution<double> distribution(0.0, 1.0);
-        for (int i = 0; i < matrixSize; ++i) {
-            for (int j = 0; j < matrixSize; ++j) {
-                fullA[static_cast<size_t>(i) * matrixSize + j] = distribution(generator);
-                fullB[static_cast<size_t>(i) * matrixSize + j] = distribution(generator);
+        for (size_t i = 0; i < matrixSize; ++i) {
+            const size_t rowOff = i * matrixSize;
+            for (size_t j = 0; j < matrixSize; ++j) {
+                fullA[rowOff + j] = distribution(generator);
+                fullB[rowOff + j] = distribution(generator);
             }
         }
     }
 
+    const size_t baseRows = matrixSize / static_cast<size_t>(worldSize);
+    const int remainder = static_cast<int>(matrixSize % static_cast<size_t>(worldSize));
+
     std::vector<int> sendCounts(worldSize, 0);
     std::vector<int> displacements(worldSize, 0);
     if (worldRank == 0) {
-        int baseRows = matrixSize / worldSize;
-        int remainder = matrixSize % worldSize;
-        int offset = 0;
+        size_t offset = 0;
         for (int p = 0; p < worldSize; ++p) {
-            int rowsForP = baseRows + (p < remainder ? 1 : 0);
-            sendCounts[p] = rowsForP * matrixSize;
-            displacements[p] = offset * matrixSize;
+            const size_t rowsForP = baseRows + (p < remainder ? 1u : 0u);
+            sendCounts[p] = static_cast<int>(rowsForP * matrixSize);
+            displacements[p] = static_cast<int>(offset * matrixSize);
             offset += rowsForP;
         }
     }
@@ -83,15 +88,15 @@ int main(int argc, char** argv) {
     MPI_Bcast(sendCounts.data(), worldSize, MPI_INT, 0, MPI_COMM_WORLD);
     MPI_Bcast(displacements.data(), worldSize, MPI_INT, 0, MPI_COMM_WORLD);
 
-    int localCount = sendCounts[worldRank];
-    int localRows = (matrixSize == 0) ? 0 : (localCount / matrixSize);
+    const int localCount = sendCounts[worldRank];
+    const int matrixElemsInt = static_cast<int>(matrixSize * matrixSize);
+    const int localRows = (matrixSize == 0) ? 0 : (localCount / static_cast<int>(matrixSize));
 
     std::vector<double> localA(static_cast<size_t>(std::max(0, localCount)));
-    std::vector<double> localB;
-    localB.resize(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize));
+    std::vector<double> localB(static_cast<size_t>(matrixSize * matrixSize));
 
     MPI_Barrier(MPI_COMM_WORLD);
-    double timeStart = MPI_Wtime();
+    const double timeStart = MPI_Wtime();
 
     if (sendMode == "collective") {
         MPI_Scatterv(
@@ -106,7 +111,7 @@ int main(int argc, char** argv) {
             MPI_COMM_WORLD
         );
 
-        MPI_Bcast((worldRank == 0 ? fullB.data() : localB.data()), matrixSize * matrixSize, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Bcast((worldRank == 0 ? fullB.data() : localB.data()), matrixElemsInt, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
         if (worldRank == 0) {
             std::copy(fullB.begin(), fullB.end(), localB.begin());
@@ -120,43 +125,33 @@ int main(int argc, char** argv) {
             MPI_Irecv(localA.data(), localCount, MPI_DOUBLE, 0, 101, MPI_COMM_WORLD, &recvRequestA);
         }
         if (worldRank != 0) {
-            MPI_Irecv(localB.data(), matrixSize * matrixSize, MPI_DOUBLE, 0, 102, MPI_COMM_WORLD, &recvRequestB);
+            MPI_Irecv(localB.data(), matrixElemsInt, MPI_DOUBLE, 0, 102, MPI_COMM_WORLD, &recvRequestB);
         }
 
         char* bsendBuffer = nullptr;
         int bsendBufferSize = 0;
         if (sendMode == "manual_bsend" && worldRank == 0) {
-            // --- calculation of required buffer size ---
-            // We consider that root may have to copy (via Bsend) for every remote process p:
-            //  - A-block of sendCounts[p] doubles
-            //  - full B matrix of matrixSize*matrixSize doubles
-            // For safety we multiply by a factor and add extra margin.
-            long long requiredBytes = 0;
             const long long bytesPerDouble = static_cast<long long>(sizeof(double));
-            const long long bsendOverhead = static_cast<long long>(MPI_BSEND_OVERHEAD);
-
+            long long requiredBytes = 0;
             for (int p = 1; p < worldSize; ++p) {
-                long long aBytes = static_cast<long long>(sendCounts[p]) * bytesPerDouble;
-                long long bBytes = static_cast<long long>(matrixSize) * static_cast<long long>(matrixSize) * bytesPerDouble;
-                requiredBytes += (aBytes + bsendOverhead);
-                requiredBytes += (bBytes + bsendOverhead);
+                const long long aBytes = static_cast<long long>(sendCounts[p]) * bytesPerDouble;
+                const long long bBytes = static_cast<long long>(matrixElemsInt) * bytesPerDouble;
+                requiredBytes += (aBytes + static_cast<long long>(MPI_BSEND_OVERHEAD));
+                requiredBytes += (bBytes + static_cast<long long>(MPI_BSEND_OVERHEAD));
             }
-
             const double safetyFactor = 2.0;
             long double scaled = static_cast<long double>(requiredBytes) * safetyFactor;
-            long long safetyMargin = 4LL * 1024 * 1024;
+            const long long safetyMargin = 4LL * 1024 * 1024;
             long long estimatedBytes = static_cast<long long>(scaled) + safetyMargin;
 
             if (estimatedBytes > static_cast<long long>(INT_MAX) - 1024) {
                 if (worldRank == 0) {
-                    std::cerr << "Warning: required MPI_Bsend buffer (" << estimatedBytes << " bytes) exceeds INT_MAX; capping to INT_MAX-1024. "
-                        << "This may still be insufficient on this system.\n";
+                    std::cerr << "Warning: required MPI_Bsend buffer (" << estimatedBytes << " bytes) exceeds INT_MAX; capping to INT_MAX-1024.\n";
                 }
                 estimatedBytes = static_cast<long long>(INT_MAX) - 1024;
             }
-            else if (estimatedBytes < 0) {
+            if (estimatedBytes < 0)
                 estimatedBytes = static_cast<long long>(INT_MAX) - 1024;
-            }
 
             bsendBufferSize = static_cast<int>(estimatedBytes);
 
@@ -168,7 +163,7 @@ int main(int argc, char** argv) {
                 MPI_Abort(MPI_COMM_WORLD, 1);
             }
 
-            int attachErr = MPI_Buffer_attach(bsendBuffer, bsendBufferSize);
+            const int attachErr = MPI_Buffer_attach(bsendBuffer, bsendBufferSize);
             if (attachErr != MPI_SUCCESS) {
                 std::cerr << "Error: MPI_Buffer_attach failed when attaching buffer of size " << bsendBufferSize << " bytes.\n";
                 void* detachedPtr = nullptr;
@@ -184,8 +179,8 @@ int main(int argc, char** argv) {
 
         if (worldRank == 0) {
             for (int p = 0; p < worldSize; ++p) {
-                int count = sendCounts[p];
-                int disp = displacements[p];
+                const int count = sendCounts[p];
+                const int disp = displacements[p];
                 if (p == 0) {
                     if (count > 0) {
                         std::copy(fullA.begin() + disp, fullA.begin() + disp + count, localA.begin());
@@ -200,28 +195,27 @@ int main(int argc, char** argv) {
                 if (sendMode == "manual_std") {
                     if (count > 0)
                         MPI_Send(const_cast<double*>(sendPtrA), count, MPI_DOUBLE, p, 101, MPI_COMM_WORLD);
-                    MPI_Send(const_cast<double*>(sendPtrB), matrixSize * matrixSize, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
+                    MPI_Send(const_cast<double*>(sendPtrB), matrixElemsInt, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
                 }
                 else if (sendMode == "manual_ssend") {
                     if (count > 0)
                         MPI_Ssend(const_cast<double*>(sendPtrA), count, MPI_DOUBLE, p, 101, MPI_COMM_WORLD);
-                    MPI_Ssend(const_cast<double*>(sendPtrB), matrixSize * matrixSize, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
+                    MPI_Ssend(const_cast<double*>(sendPtrB), matrixElemsInt, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
                 }
                 else if (sendMode == "manual_bsend") {
                     if (count > 0)
                         MPI_Bsend(const_cast<double*>(sendPtrA), count, MPI_DOUBLE, p, 101, MPI_COMM_WORLD);
-                    MPI_Bsend(const_cast<double*>(sendPtrB), matrixSize * matrixSize, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
+                    MPI_Bsend(const_cast<double*>(sendPtrB), matrixElemsInt, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
                 }
                 else if (sendMode == "manual_rsend") {
                     if (count > 0)
                         MPI_Rsend(const_cast<double*>(sendPtrA), count, MPI_DOUBLE, p, 101, MPI_COMM_WORLD);
-                    MPI_Rsend(const_cast<double*>(sendPtrB), matrixSize * matrixSize, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
+                    MPI_Rsend(const_cast<double*>(sendPtrB), matrixElemsInt, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
                 }
                 else {
-                    // fallback to standard send
                     if (count > 0)
                         MPI_Send(const_cast<double*>(sendPtrA), count, MPI_DOUBLE, p, 101, MPI_COMM_WORLD);
-                    MPI_Send(const_cast<double*>(sendPtrB), matrixSize * matrixSize, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
+                    MPI_Send(const_cast<double*>(sendPtrB), matrixElemsInt, MPI_DOUBLE, p, 102, MPI_COMM_WORLD);
                 }
             }
         }
@@ -243,16 +237,15 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::vector<double> localC(static_cast<size_t>(localRows) * static_cast<size_t>(matrixSize), 0.0);
-
-    for (int i = 0; i < localRows; ++i) {
-        size_t aRowOffset = static_cast<size_t>(i) * matrixSize;
-        size_t cRowOffset = static_cast<size_t>(i) * matrixSize;
-        for (int k = 0; k < matrixSize; ++k) {
-            double aVal = localA[aRowOffset + static_cast<size_t>(k)];
-            size_t bRowOffset = static_cast<size_t>(k) * matrixSize;
-            for (int j = 0; j < matrixSize; ++j) {
-                localC[cRowOffset + static_cast<size_t>(j)] += aVal * localB[bRowOffset + static_cast<size_t>(j)];
+    std::vector<double> localC(static_cast<size_t>(localRows) * matrixSize, 0.0);
+    for (int ii = 0; ii < localRows; ++ii) {
+        const size_t aRowOffset = static_cast<size_t>(ii) * matrixSize;
+        const size_t cRowOffset = static_cast<size_t>(ii) * matrixSize;
+        for (size_t k = 0; k < matrixSize; ++k) {
+            const double aVal = localA[aRowOffset + k];
+            const size_t bRowOffset = k * matrixSize;
+            for (size_t j = 0; j < matrixSize; ++j) {
+                localC[cRowOffset + j] += aVal * localB[bRowOffset + j];
             }
         }
     }
@@ -260,21 +253,18 @@ int main(int argc, char** argv) {
     std::vector<int> recvCounts(worldSize, 0);
     std::vector<int> recvDispls(worldSize, 0);
     if (worldRank == 0) {
-        int baseRows = matrixSize / worldSize;
-        int remainder = matrixSize % worldSize;
         int offsetRows = 0;
         for (int p = 0; p < worldSize; ++p) {
-            int rowsForP = baseRows + (p < remainder ? 1 : 0);
-            recvCounts[p] = rowsForP * matrixSize;
-            recvDispls[p] = offsetRows * matrixSize;
+            const int rowsForP = static_cast<int>(baseRows + (p < remainder ? 1u : 0u));
+            recvCounts[p] = rowsForP * static_cast<int>(matrixSize);
+            recvDispls[p] = offsetRows * static_cast<int>(matrixSize);
             offsetRows += rowsForP;
         }
     }
 
     std::vector<double> fullC;
-    if (worldRank == 0) {
-        fullC.assign(static_cast<size_t>(matrixSize) * static_cast<size_t>(matrixSize), 0.0);
-    }
+    if (worldRank == 0)
+        fullC.assign(matrixSize * matrixSize, 0.0);
 
     MPI_Gatherv(
         (localC.empty() ? nullptr : localC.data()),
@@ -289,8 +279,8 @@ int main(int argc, char** argv) {
     );
 
     MPI_Barrier(MPI_COMM_WORLD);
-    double timeEnd = MPI_Wtime();
-    double elapsedSeconds = timeEnd - timeStart;
+    const double timeEnd = MPI_Wtime();
+    const double elapsedSeconds = timeEnd - timeStart;
 
     if (worldRank == 0) {
         double checksum = 0.0;

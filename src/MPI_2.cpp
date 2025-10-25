@@ -4,6 +4,7 @@
 #include <random>
 #include <string>
 #include <iomanip>
+#include <cstdint>
 
 // Usage:
 //   MPI_2 <problemSize> [seed]
@@ -27,10 +28,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    const std::int64_t problemSize = static_cast<std::int64_t>(std::stoll(argv[1]));
+    const std::size_t problemSize = static_cast<std::size_t>(std::stoull(argv[1]));
     const unsigned int seed = (argc >= 3) ? static_cast<unsigned int>(std::stoul(argv[2])) : 123456u;
 
-    if (problemSize <= 0) {
+    if (problemSize == 0) {
         if (processRank == 0)
             std::cerr << "problemSize must be > 0\n";
         MPI_Finalize();
@@ -39,29 +40,28 @@ int main(int argc, char** argv) {
 
     std::vector<double> fullA;
     std::vector<double> fullB;
-    std::vector<int> sendCounts(numProcesses, 0);
-    std::vector<int> displacements(numProcesses, 0);
-
     if (processRank == 0) {
-        fullA.resize(static_cast<std::size_t>(problemSize));
-        fullB.resize(static_cast<std::size_t>(problemSize));
-
+        fullA.resize(problemSize);
+        fullB.resize(problemSize);
         std::mt19937_64 generator(static_cast<unsigned long long>(seed));
         std::uniform_real_distribution<double> distribution(0.0, 1.0);
-
-        for (std::int64_t i = 0; i < problemSize; ++i) {
-            fullA[static_cast<std::size_t>(i)] = distribution(generator);
-            fullB[static_cast<std::size_t>(i)] = distribution(generator);
+        for (std::size_t i = 0; i < problemSize; ++i) {
+            fullA[i] = distribution(generator);
+            fullB[i] = distribution(generator);
         }
+    }
 
-        const std::int64_t base = problemSize / numProcesses;
-        const int remainder = static_cast<int>(problemSize % numProcesses);
-        int offset = 0;
+    const std::size_t base = problemSize / static_cast<std::size_t>(numProcesses);
+    const int remainder = static_cast<int>(problemSize % static_cast<std::size_t>(numProcesses));
+
+    std::vector<int> sendCounts(numProcesses), displacements(numProcesses);
+    if (processRank == 0) {
+        std::size_t offset = 0;
         for (int p = 0; p < numProcesses; ++p) {
-            const int count = static_cast<int>(base + (p < remainder ? 1 : 0));
-            sendCounts[p] = count;
-            displacements[p] = offset;
-            offset += count;
+            std::size_t countForP = base + (p < remainder ? 1u : 0u);
+            sendCounts[p] = static_cast<int>(countForP);
+            displacements[p] = static_cast<int>(offset);
+            offset += countForP;
         }
     }
 
@@ -77,8 +77,8 @@ int main(int argc, char** argv) {
 
     MPI_Scatterv(
         (processRank == 0 ? fullA.data() : nullptr),
-        sendCounts.data(),
-        displacements.data(),
+        (processRank == 0 ? sendCounts.data() : nullptr),
+        (processRank == 0 ? displacements.data() : nullptr),
         MPI_DOUBLE,
         (localCount > 0 ? localA.data() : nullptr),
         localCount,
@@ -89,8 +89,8 @@ int main(int argc, char** argv) {
 
     MPI_Scatterv(
         (processRank == 0 ? fullB.data() : nullptr),
-        sendCounts.data(),
-        displacements.data(),
+        (processRank == 0 ? sendCounts.data() : nullptr),
+        (processRank == 0 ? displacements.data() : nullptr),
         MPI_DOUBLE,
         (localCount > 0 ? localB.data() : nullptr),
         localCount,
