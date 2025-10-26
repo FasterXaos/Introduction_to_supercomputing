@@ -238,9 +238,9 @@ int main(int argc, char** argv) {
     }
 
     std::vector<double> localC(static_cast<size_t>(localRows) * matrixSize, 0.0);
-    for (int ii = 0; ii < localRows; ++ii) {
-        const size_t aRowOffset = static_cast<size_t>(ii) * matrixSize;
-        const size_t cRowOffset = static_cast<size_t>(ii) * matrixSize;
+    for (int i = 0; i < localRows; ++ii) {
+        const size_t aRowOffset = static_cast<size_t>(i) * matrixSize;
+        const size_t cRowOffset = static_cast<size_t>(i) * matrixSize;
         for (size_t k = 0; k < matrixSize; ++k) {
             const double aVal = localA[aRowOffset + k];
             const size_t bRowOffset = k * matrixSize;

@@ -182,8 +182,8 @@ int main(int argc, char** argv) {
         const int blockSizeInt = static_cast<int>(matrixSize / static_cast<std::size_t>(q));
         const std::size_t blockSize = static_cast<std::size_t>(blockSizeInt);
 
-        int dims[2] = { q, q };
-        int periods[2] = { 1, 1 };
+        int dims[2] = {q, q};
+        int periods[2] = {1, 1};
         MPI_Comm cartComm;
         MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 1, &cartComm);
 

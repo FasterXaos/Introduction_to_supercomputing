@@ -31,7 +31,6 @@ static void doComputeWork(int computeUnits) {
             accumulator += std::sin(x) * std::cos(x + 0.123) + std::sqrt(std::fmod(x + 1.234, 100.0));
         }
     }
-    // prevent optimizer from removing work
     volatile double blackhole = accumulator;
     (void)blackhole;
 }
@@ -59,9 +58,6 @@ int main(int argc, char** argv) {
     const std::string mode = argv[4];
     const unsigned int seed = (argc >= 6) ? static_cast<unsigned int>(std::stoul(argv[5])) : 123456u;
 
-    if (messageSize == 0 && mode != "compute_only") {
-        // allow zero-size when user wants compute_only, otherwise warn but proceed
-    }
     if (numIterations <= 0 || computeUnits < 0) {
         if (worldRank == 0)
             std::cerr << "Invalid numeric arguments\n";
@@ -106,7 +102,8 @@ int main(int argc, char** argv) {
     if (mode == "blocking") {
         for (int iter = 0; iter < numIterations; ++iter) {
             const double compStart = MPI_Wtime();
-            if (computeUnits > 0) doComputeWork(computeUnits);
+            if (computeUnits > 0)
+                doComputeWork(computeUnits);
             const double compEnd = MPI_Wtime();
             totalComputeTime += (compEnd - compStart);
 
@@ -121,7 +118,7 @@ int main(int argc, char** argv) {
     }
     else if (mode == "nonblocking") {
         for (int iter = 0; iter < numIterations; ++iter) {
-            MPI_Request reqs[2] = { MPI_REQUEST_NULL, MPI_REQUEST_NULL };
+            MPI_Request reqs[2] = {MPI_REQUEST_NULL, MPI_REQUEST_NULL};
             MPI_Status stats[2];
 
             if (worldSize > 1) {
@@ -130,7 +127,8 @@ int main(int argc, char** argv) {
             }
 
             const double compStart = MPI_Wtime();
-            if (computeUnits > 0) doComputeWork(computeUnits);
+            if (computeUnits > 0)
+                doComputeWork(computeUnits);
             const double compEnd = MPI_Wtime();
             totalComputeTime += (compEnd - compStart);
 
@@ -156,13 +154,15 @@ int main(int argc, char** argv) {
     else if (mode == "compute_only") {
         for (int iter = 0; iter < numIterations; ++iter) {
             const double compStart = MPI_Wtime();
-            if (computeUnits > 0) doComputeWork(computeUnits);
+            if (computeUnits > 0)
+                doComputeWork(computeUnits);
             const double compEnd = MPI_Wtime();
             totalComputeTime += (compEnd - compStart);
         }
     }
     else {
-        if (worldRank == 0) std::cerr << "Unknown mode: " << mode << "\n";
+        if (worldRank == 0)
+            std::cerr << "Unknown mode: " << mode << "\n";
         MPI_Finalize();
         return 3;
     }

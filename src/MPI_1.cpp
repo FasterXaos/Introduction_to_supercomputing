@@ -55,7 +55,9 @@ int main(int argc, char** argv) {
         fullVector.resize(vectorSize);
         std::mt19937_64 generator(static_cast<unsigned long long>(seed));
         std::uniform_real_distribution<double> distribution(0.0, 1.0e6);
-        for (std::size_t i = 0; i < vectorSize; ++i) fullVector[i] = distribution(generator);
+        for (std::size_t i = 0; i < vectorSize; ++i) {
+            fullVector[i] = distribution(generator);
+        }
     }
 
     const std::size_t base = vectorSize / static_cast<std::size_t>(worldSize);

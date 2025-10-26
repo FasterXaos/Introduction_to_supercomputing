@@ -14,8 +14,8 @@ jobScript="$scriptDir/MPI_7_job.sh"
 csvPath="$resultsDir/MPI_7.csv"
 
 messageSizeList=(1024 16384 65536 262144 1048576)
-processList=(1 2 4 6 8)
-computeUnitsList=(0 10 50 200)
+processList=(1 2 4 6 8 16 32)
+computeUnitsList=(0 200)
 numIterations=50
 modes=("blocking" "nonblocking" "comm_only" "compute_only")
 numRuns=3
