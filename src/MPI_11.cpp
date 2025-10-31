@@ -65,7 +65,7 @@ int main(int argc, char** argv) {
     int dims[2] = { gridRows, gridCols };
     int periods[2] = { 0, 0 };
     MPI_Comm cartComm = MPI_COMM_NULL;
-    MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 1, &cartComm);
+    MPI_Cart_create(MPI_COMM_WORLD, 2, dims, periods, 0, &cartComm);
 
     int coords[2] = { 0, 0 };
     MPI_Cart_coords(cartComm, worldRank, 2, coords);

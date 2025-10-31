@@ -104,10 +104,12 @@ int main(int argc, char** argv) {
         for (int i = 1; i < localCount; ++i) {
             const double val = localBuffer[static_cast<std::size_t>(i)];
             if (wantMin) {
-                if (val < localResult) localResult = val;
+                if (val < localResult)
+                    localResult = val;
             }
             else {
-                if (val > localResult) localResult = val;
+                if (val > localResult)
+                    localResult = val;
             }
         }
     }

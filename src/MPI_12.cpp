@@ -199,7 +199,9 @@ int main(int argc, char** argv) {
             if (n3 != n1 && n3 != n2) neighbors.push_back(n3);
             if (n4 != n1 && n4 != n2 && n4 != n3) neighbors.push_back(n4);
 
-            for (int nb : neighbors) edges.push_back(nb);
+            for (int nb : neighbors) {
+                edges.push_back(nb);
+            }
             index[r] = static_cast<int>(edges.size());
         }
 

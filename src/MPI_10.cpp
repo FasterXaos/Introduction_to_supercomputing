@@ -51,7 +51,8 @@ int main(int argc, char** argv) {
     const size_t blockCols = static_cast<size_t>(blockColsLL);
 
     if (blockRows > matrixRows || blockCols > matrixCols) {
-        if (worldRank == 0) std::cerr << "blockRows/blockCols must be <= matrixRows/matrixCols\n";
+        if (worldRank == 0)
+            std::cerr << "blockRows/blockCols must be <= matrixRows/matrixCols\n";
         MPI_Finalize();
         return 3;
     }
